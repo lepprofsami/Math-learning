@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Classroom = require('../models/Classroom'); // Make sure this path is correct
-const User = require('../models/User'); // Assuming you have a User model
+const User = require('../models/user'); // Assuming you have a User model
 const isAuthenticated = require('../middleware/isAuthenticated');
 const isClassMember = require('../middleware/isClassMember'); // Used for :id routes
 const upload = require('../middleware/upload'); // Assuming you have an upload middleware for files
