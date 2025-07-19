@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Inscription - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <style>
+        /* Styles pour les messages d'information */
+        .info-message {
+            background-color: #e0f7fa; /* Bleu clair */
+            border: 1px solid #00bcd4; /* Bordure plus foncée */
+            color: #006064; /* Texte foncé */
+            padding: 10px 15px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+            font-size: 0.9em;
+        }
+        .info-message code {
+            background-color: #cce9ed;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Inscription</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                <li><a href="/login">Se connecter</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <div class="auth-container">
+            <h2>Créez votre compte</h2>
+            <% if (typeof error !== 'undefined' && error) { %>
+                <p class="error-message"><%= error %></p>
+            <% } %>
+            <% if (typeof message !== 'undefined' && message) { %>
+                <p class="success-message"><%= message %></p>
+            <% } %>
+
+            <div id="teacherInfoMessage" class="info-message" style="display: none;">
+                <p><strong>Information Importante :</strong> Pour des raisons commerciales, la création de nouveaux comptes professeur est limitée.</p>
+                <p>Veuillez utiliser le compte prédéfini :<br>
+                Nom d'utilisateur : <code>teacher</code><br>
+                Mot de passe : <code>123456</code></p>
+                <p>Ces champs seront automatiquement remplis et désactivés lorsque "Professeur" est sélectionné.</p>
+            </div>
+            <form action="/register" method="POST">
+                <label for="username">Nom d'utilisateur:</label>
+                <input type="text" id="username" name="username" required>
+
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" name="password" required>
+
+                <label for="role">Je suis un(e) :</label>
+                <select id="role" name="role" required>
+                    <option value="">Sélectionnez un rôle</option>
+                    <option value="teacher">Professeur</option>
+                    <option value="student">Élève</option>
+                </select>
+
+                <label for="classroomCode" id="classroomCodeLabel" style="display: none;">Code de classe:</label>
+                <input type="text" id="classroomCode" name="classroomCode" style="display: none;">
+
+                <button type="submit">S'inscrire</button>
+            </form>
+            <p>Déjà un compte ? <a href="/login">Connectez-vous ici</a>.</p>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2024 Math-learning</p>
+    </footer>
+
+    <script>
+        const roleSelect = document.getElementById('role');
+        const usernameInput = document.getElementById('username');
+        const passwordInput = document.getElementById('password');
+        const classroomCodeLabel = document.getElementById('classroomCodeLabel');
+        const classroomCodeInput = document.getElementById('classroomCode');
+        const teacherInfoMessage = document.getElementById('teacherInfoMessage'); // Référence au nouveau message
+
+        function handleRoleChange() {
+            if (roleSelect.value === 'student') {
+                // Pour les élèves : afficher le champ de code de classe
+                classroomCodeLabel.style.display = 'block';
+                classroomCodeInput.style.display = 'block';
+                classroomCodeInput.setAttribute('required', 'required');
+
+                // Réactiver et vider les champs username/password
+                usernameInput.value = '';
+                usernameInput.disabled = false;
+                usernameInput.readOnly = false; // Important pour les navigateurs
+                passwordInput.value = '';
+                passwordInput.disabled = false;
+                passwordInput.readOnly = false; // Important pour les navigateurs
+
+                // Cacher le message d'info professeur
+                teacherInfoMessage.style.display = 'none';
+
+            } else if (roleSelect.value === 'teacher') {
+                // Pour les professeurs : masquer le champ de code de classe
+                classroomCodeLabel.style.display = 'none';
+                classroomCodeInput.style.display = 'none';
+                classroomCodeInput.removeAttribute('required');
+                classroomCodeInput.value = ''; // Vider la valeur
+
+                // Pré-remplir et désactiver les champs username/password
+                usernameInput.value = 'teacher';
+                usernameInput.disabled = true;
+                usernameInput.readOnly = true; // Empêche l'édition
+                passwordInput.value = '123456';
+                passwordInput.disabled = true;
+                passwordInput.readOnly = true; // Empêche l'édition
+
+                // Afficher le message d'info professeur
+                teacherInfoMessage.style.display = 'block';
+
+            } else {
+                // Quand "Sélectionnez un rôle" est choisi
+                classroomCodeLabel.style.display = 'none';
+                classroomCodeInput.style.display = 'none';
+                classroomCodeInput.removeAttribute('required');
+                classroomCodeInput.value = '';
+
+                usernameInput.value = '';
+                usernameInput.disabled = false;
+                usernameInput.readOnly = false;
+                passwordInput.value = '';
+                passwordInput.disabled = false;
+                passwordInput.readOnly = false;
+
+                teacherInfoMessage.style.display = 'none';
+            }
+        }
+
+        // Exécuter la fonction une fois au chargement initial de la page
+        handleRoleChange();
+
+        // Attacher l'écouteur d'événement au changement de sélection
+        roleSelect.addEventListener('change', handleRoleChange);
+    </script>
+</body>
+</html>

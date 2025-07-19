@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><%= classroom.name %> - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+    <style>
+        /* Styles pour le conteneur des contrôles de chat (boutons d'action) */
+        .chat-input-controls {
+            display: flex;
+            gap: 10px; /* Espace entre les boutons */
+            margin-bottom: 10px;
+        }
+
+        /* Styles pour le formulaire de chat (champ de texte + bouton envoyer) */
+        .chat-input-form {
+            display: flex;
+            align-items: center;
+            flex-wrap: wrap; /* Permet aux éléments de passer à la ligne sur petits écrans */
+            gap: 10px;
+            margin-top: 10px;
+        }
+
+        /* Le champ de saisie prendra le maximum d'espace disponible */
+        .chat-input-form input[type="text"] {
+            flex-grow: 1;
+            min-width: 150px; /* Taille minimale pour le champ de saisie */
+        }
+
+        /* Styles pour le conteneur d'aperçu de l'image */
+        .image-preview-container {
+            margin-top: 10px;
+            border: 1px solid #ddd;
+            padding: 10px;
+            display: flex; /* Utilise flexbox pour aligner l'image, le nom et le bouton */
+            align-items: center; /* Centre verticalement les éléments */
+            gap: 10px; /* Espace entre les éléments de l'aperçu */
+            background-color: #f0f0f0;
+            border-radius: 5px;
+        }
+
+        /* Style de l'image d'aperçu */
+        .image-preview-container img {
+            max-width: 100px;
+            max-height: 100px;
+            border-radius: 3px;
+        }
+
+        /* Style du bouton pour retirer l'image */
+        .remove-image-button {
+            background-color: #ff6347; /* Couleur rouge */
+            color: white;
+            border: none;
+            padding: 5px 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        
+        /* Style des images dans le chat */
+        .message-item .chat-image {
+            max-width: 100%; /* S'assure que l'image ne déborde pas du conteneur de message */
+            height: auto; /* Maintient le ratio de l'image */
+            display: block; /* Pour centrer l'image si désiré, ou simplement la placer sur sa propre ligne */
+            margin: 5px auto; /* Marge au-dessus et en-dessous, et centrée */
+            border-radius: 5px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Petite ombre pour un meilleur rendu */
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <h1><%= classroom.name %> (Code: <%= classroom.classCode %>)</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                <% if (user && user.role === 'teacher') { %>
+                    <li><a href="/teacher/dashboard">Tableau de bord Professeur</a></li>
+                <% } else if (user) { %>
+                    <li><a href="/student/dashboard">Tableau de bord Élève</a></li>
+                <% } %>
+                <li><a href="/logout">Déconnexion</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Détails de la classe : <%= classroom.name %></h2>
+        <p>Professeur :
+            <% if (classroom.teacher && classroom.teacher.username) { %>
+                <strong><%= classroom.teacher.username %></strong>
+            <% } else { %>
+                <strong>Non spécifié</strong>
+            <% } %>
+        </p>
+        <p>Nombre d'élèves inscrits : <strong><%= classroom.students ? classroom.students.length : 0 %></strong></p>
+        <hr>
+
+        <section class="chat-container">
+            <h3>Chat de la classe</h3>
+            <div id="messages" class="chat-box">
+                <% if (classroom.messages && classroom.messages.length > 0) { %>
+                    <% classroom.messages.forEach(function(message) { %>
+                        <div class="message-item">
+                            <strong>
+                                <% if (message.sender && message.sender.username) { %>
+                                    <%= message.sender.username %>
+                                <% } else { %>
+                                    Utilisateur Inconnu
+                                <% } %>
+                            :</strong>
+                            <% if (message.type === 'image') { %>
+                                <img src="<%= message.imageUrl %>" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">
+                            <% } else { %>
+                                <%= message.content %>
+                            <% } %>
+                            <span class="timestamp"><%= message.timestamp ? new Date(message.timestamp).toLocaleString() : 'Date inconnue' %></span>
+                        </div>
+                    <% }); %>
+                <% } else { %>
+                    <p>Aucun message pour le moment. Soyez le premier à envoyer un message !</p>
+                <% } %>
+            </div>
+            <div class="chat-input-controls">
+                <input type="file" id="imageUploadInput" accept="image/*" style="display: none;">
+                <button type="button" id="uploadImageButton" class="button">Image (<i class="fas fa-image" style="vertical-align: middle;"></i>)</button>
+            </div>
+            <div id="imagePreview" class="image-preview-container" style="display: none;">
+                <img id="previewImage" src="#" alt="Aperçu de l'image">
+                <span id="imageFileName"></span>
+                <button type="button" id="removeImageButton" class="remove-image-button">X</button>
+            </div>
+            <form id="chatForm" class="chat-input-form">
+                <input type="text" id="messageInput" placeholder="Écrivez votre message..." required>
+                <button type="submit" class="button">Envoyer</button>
+            </form>
+        </section>
+        <hr>
+
+        <section class="files-container">
+            <h3>Dépôt de Fichiers</h3>
+            <form action="/classes/<%= classroom._id %>/files" method="POST" enctype="multipart/form-data" class="file-upload-form">
+                <label for="fileUpload">Uploader un fichier :</label>
+                <input type="file" id="fileUpload" name="classFile" required>
+
+                <label for="fileCategory">Catégorie :</label>
+                <select id="fileCategory" name="category" required>
+                    <option value="">Sélectionner une catégorie</option>
+                    <option value="exercise">Exercice</option>
+                    <option value="homework">Devoir</option>
+                    <option value="correction">Correction</option>
+                </select>
+                <button type="submit" class="button">Uploader</button>
+            </form>
+
+            <h4>Fichiers Déposés par Catégorie</h4>
+            <%
+                const categorizedFiles = {
+                    'exercise': [],
+                    'homework': [],
+                    'correction': []
+                };
+
+                if (classroom.files && classroom.files.length > 0) {
+                    classroom.files.forEach(function(file) {
+                        if (categorizedFiles[file.category]) {
+                            categorizedFiles[file.category].push(file);
+                        }
+                    });
+                }
+            %>
+
+            <h5>Exercices</h5>
+            <% if (categorizedFiles.exercise.length > 0) { %>
+                <ul class="file-list">
+                    <% categorizedFiles.exercise.forEach(function(file) { %>
+                        <li>
+                            <%
+                                let displayFileName = file.fileName || 'Fichier sans nom';
+                                let fileUrl = '#';
+                                if (file.filePath && typeof file.filePath === 'string') {
+                                    const pathParts = file.filePath.split(/[\\/]/);
+                                    const fileNameInPath = pathParts[pathParts.length - 1];
+                                    if (fileNameInPath) {
+                                        fileUrl = "/uploads/" + fileNameInPath;
+                                    }
+                                }
+                            %>
+                            <a href="<%= fileUrl %>" target="_blank" download>
+                                <%= displayFileName %>
+                            </a>
+                            (Taille: <%= file.fileSize ? (file.fileSize / 1024 / 1024).toFixed(2) + ' Mo' : 'N/A' %>) -
+                            Uploadé par
+                            <strong>
+                                <% if (file.uploader && file.uploader.username) { %>
+                                    <%= file.uploader.username %>
+                                <% } else { %>
+                                    Utilisateur Inconnu
+                                <% } %>
+                            </strong>
+                            le <%= file.uploadDate ? new Date(file.uploadDate).toLocaleDateString('fr-FR') : 'Date inconnue' %>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } else { %>
+                <p>Aucun exercice déposé pour le moment.</p>
+            <% } %>
+
+            <h5>Devoirs</h5>
+            <% if (categorizedFiles.homework.length > 0) { %>
+                <ul class="file-list">
+                    <% categorizedFiles.homework.forEach(function(file) { %>
+                        <li>
+                            <%
+                                let displayFileName = file.fileName || 'Fichier sans nom';
+                                let fileUrl = '#';
+                                if (file.filePath && typeof file.filePath === 'string') {
+                                    const pathParts = file.filePath.split(/[\\/]/);
+                                    const fileNameInPath = pathParts[pathParts.length - 1];
+                                    if (fileNameInPath) {
+                                        fileUrl = "/uploads/" + fileNameInPath;
+                                    }
+                                }
+                            %>
+                            <a href="<%= fileUrl %>" target="_blank" download>
+                                <%= displayFileName %>
+                            </a>
+                            (Taille: <%= file.fileSize ? (file.fileSize / 1024 / 1024).toFixed(2) + ' Mo' : 'N/A' %>) -
+                            Uploadé par
+                            <strong>
+                                <% if (file.uploader && file.uploader.username) { %>
+                                    <%= file.uploader.username %>
+                                <% } else { %>
+                                    Utilisateur Inconnu
+                                <% } %>
+                            </strong>
+                            le <%= file.uploadDate ? new Date(file.uploadDate).toLocaleDateString('fr-FR') : 'Date inconnue' %>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } else { %>
+                <p>Aucun devoir déposé pour le moment.</p>
+            <% } %>
+
+            <h5>Corrections</h5>
+            <% if (categorizedFiles.correction.length > 0) { %>
+                <ul class="file-list">
+                    <% categorizedFiles.correction.forEach(function(file) { %>
+                        <li>
+                            <%
+                                let displayFileName = file.fileName || 'Fichier sans nom';
+                                let fileUrl = '#';
+                                if (file.filePath && typeof file.filePath === 'string') {
+                                    const pathParts = file.filePath.split(/[\\/]/);
+                                    const fileNameInPath = pathParts[pathParts.length - 1];
+                                    if (fileNameInPath) {
+                                        fileUrl = "/uploads/" + fileNameInPath;
+                                    }
+                                }
+                            %>
+                            <a href="<%= fileUrl %>" target="_blank" download>
+                                <%= displayFileName %>
+                            </a>
+                            (Taille: <%= file.fileSize ? (file.fileSize / 1024 / 1024).toFixed(2) + ' Mo' : 'N/A' %>) -
+                            Uploadé par
+                            <strong>
+                                <% if (file.uploader && file.uploader.username) { %>
+                                    <%= file.uploader.username %>
+                                <% } else { %>
+                                    Utilisateur Inconnu
+                                <% } %>
+                            </strong>
+                            le <%= file.uploadDate ? new Date(file.uploadDate).toLocaleDateString('fr-FR') : 'Date inconnue' %>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } else { %>
+                <p>Aucune correction déposée pour le moment.</p>
+            <% } %>
+
+        </section>
+        <hr>
+    </main>
+
+    <footer>
+        <p>&copy; 2025 Math-learning</p>
+    </footer>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // Initialisation de Socket.IO
+        const socket = io();
+
+        const classroomId = '<%= classroom._id %>';
+        const currentUsername = '<%= user.username %>';
+
+        // Références aux éléments HTML du chat
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const chatForm = document.getElementById('chatForm');
+
+        // Nouveaux éléments pour les images
+        const uploadImageButton = document.getElementById('uploadImageButton');
+        const imageUploadInput = document.getElementById('imageUploadInput');
+        const imagePreviewContainer = document.getElementById('imagePreview');
+        const previewImage = document.getElementById('previewImage');
+        const imageFileNameSpan = document.getElementById('imageFileName');
+        const removeImageButton = document.getElementById('removeImageButton');
+
+        let selectedImageFile = null;
+        let currentMessageType = 'text'; // Peut être 'text' ou 'image'
+        let currentImageUrl = ''; // Pour stocker l'URL de l'image après l'upload
+
+        // Confirmer le chargement du client Socket.IO
+        console.log("Socket.IO client loaded.");
+        console.log("Classroom ID:", classroomId);
+        console.log("Current User:", currentUsername);
+
+        // 1. Rejoindre la salle de chat spécifique à la classe
+        if (classroomId) {
+            socket.emit('joinRoom', classroomId);
+            console.log(`Client trying to join room: ${classroomId}`);
+        } else {
+            console.error("Classroom ID is not defined for Socket.IO joinRoom.");
+        }
+
+        // --- Logique d'upload d'images ---
+        uploadImageButton.addEventListener('click', () => {
+            imageUploadInput.click(); // Simule le clic sur l'input de type file
+        });
+
+        imageUploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                selectedImageFile = file;
+                previewImage.src = URL.createObjectURL(file); // Affiche un aperçu de l'image
+                imageFileNameSpan.textContent = file.name; // Affiche le nom du fichier
+                imagePreviewContainer.style.display = 'flex'; // Affiche le conteneur d'aperçu
+
+                // Désactive le champ de message textuel et change le type de message
+                messageInput.value = '[Image insérée]'; // Indique qu'une image est prête
+                messageInput.disabled = true;
+                currentMessageType = 'image';
+            } else {
+                // Si aucun fichier n'est sélectionné ou si l'utilisateur annule
+                imagePreviewContainer.style.display = 'none';
+                selectedImageFile = null;
+                currentMessageType = 'text';
+                messageInput.value = '';
+                messageInput.disabled = false;
+            }
+        });
+
+        removeImageButton.addEventListener('click', () => {
+            resetChatInput(); // Réinitialise l'input du chat, y compris l'image
+        });
+
+        // 2. Gérer l'envoi d'un message via le formulaire
+        chatForm.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Empêche le rechargement de la page
+
+            let messageToSend = {
+                classroomId: classroomId,
+                type: currentMessageType,
+                content: messageInput.value.trim()
+            };
+
+            if (currentMessageType === 'image' && selectedImageFile) {
+                const formData = new FormData();
+                formData.append('chatImage', selectedImageFile); // 'chatImage' doit correspondre au nom attendu par Multer sur le serveur
+
+                try {
+                    const response = await fetch('/api/chat/upload-image', { // Assurez-vous que cette route existe sur votre serveur
+                        method: 'POST',
+                        body: formData
+                    });
+                    const result = await response.json();
+
+                    if (result.success) {
+                        currentImageUrl = result.imageUrl;
+                        messageToSend.imageUrl = currentImageUrl; // Ajoute l'URL de l'image au message
+                        messageToSend.content = ''; // Le contenu textuel est vide pour un message image
+                        console.log('Image uploaded, URL:', currentImageUrl);
+                    } else {
+                        alert('Erreur lors du téléchargement de l\'image : ' + result.message);
+                        resetChatInput();
+                        return; // Empêche l'envoi du message si l'upload a échoué
+                    }
+                } catch (error) {
+                    console.error('Erreur réseau ou serveur lors de l\'upload d\'image:', error);
+                    alert('Erreur réseau lors du téléchargement de l\'image.');
+                    resetChatInput();
+                    return; // Empêche l'envoi du message en cas d'erreur
+                }
+            } else {
+                // Si c'est un message texte, s'assurer qu'il y a du contenu
+                if (!messageToSend.content) {
+                    alert('Veuillez écrire un message ou insérer une image.');
+                    return;
+                }
+                messageToSend.type = 'text'; // S'assure que le type est 'text' si pas d'image
+            }
+
+            console.log('Client emitting chatMessage:', messageToSend);
+            socket.emit('chatMessage', messageToSend);
+
+            resetChatInput(); // Réinitialise l'input après l'envoi
+
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Fait défiler la boîte de messages vers le bas
+        });
+
+        // Fonction pour réinitialiser l'input du chat
+        function resetChatInput() {
+            messageInput.value = '';
+            messageInput.disabled = false;
+            currentMessageType = 'text';
+            selectedImageFile = null;
+            currentImageUrl = '';
+            imageUploadInput.value = ''; // Réinitialise l'input de fichier pour permettre de sélectionner le même fichier à nouveau
+            imagePreviewContainer.style.display = 'none'; // Cache l'aperçu de l'image
+        }
+
+        // 3. Gérer la réception d'un message du serveur
+        socket.on('message', (msg) => {
+            console.log('Client received message from server via socket:', msg);
+
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message-item');
+
+            const senderDisplayName = msg.senderUsername || 'Utilisateur Inconnu';
+            let messageContentHtml = '';
+
+            if (msg.type === 'image') {
+                // Si le message est une image, crée une balise <img>
+                messageContentHtml = `<img src="${msg.imageUrl}" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">`;
+            } else {
+                // Sinon, affiche le contenu texte
+                messageContentHtml = msg.content;
+            }
+
+            messageElement.innerHTML = `
+                <strong>${senderDisplayName}:</strong> ${messageContentHtml}
+                <span class="timestamp">${msg.timestamp ? new Date(msg.timestamp).toLocaleString() : 'Date inconnue'}</span>
+            `;
+
+            messagesDiv.appendChild(messageElement);
+            // Fait défiler la boîte de messages vers le bas
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        // 4. Défilement initial vers le bas pour voir les derniers messages
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    </script>
+</body>
+</html>

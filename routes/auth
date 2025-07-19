@@ -1,0 +1,208 @@
+const express = require('express');
+const router = express.Router();
+const User = require('../models/User');
+const bcrypt = require('bcryptjs'); // Assurez-vous que bcryptjs est bien installé et utilisé pour le hachage
+const Classroom = require('../models/Classroom');
+
+// --- Route pour afficher le formulaire d'inscription (GET) ---
+router.get('/register', (req, res) => {
+    res.render('register', { title: 'Inscription', error: null });
+});
+
+// --- Route d'inscription (POST) ---
+router.post('/register', async (req, res) => {
+    try {
+        const { username, password, role, classroomCode } = req.body;
+
+        console.log('--- Nouvelle Inscription ---');
+        console.log('Tentative d\'inscription pour:', username, 'Rôle:', role);
+        console.log('Mot de passe reçu du formulaire (présence):', password ? 'Oui' : 'Non');
+
+        let user = await User.findOne({ username });
+        if (user) {
+            console.log('Échec inscription: Nom d\'utilisateur déjà pris:', username);
+            return res.render('register', { error: 'Ce nom d\'utilisateur est déjà pris.' });
+        }
+
+        // =========================================================================
+        // --- NOUVELLE LOGIQUE : Restriction pour le rôle 'teacher' ---
+        if (role === 'teacher') {
+            // Empêcher la création de tout autre utilisateur 'teacher' que le compte par défaut
+            if (username !== 'teacher' || password !== '123456') {
+                console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé.');
+                return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
+            }
+            // Si c'est "teacher" et "123456", on peut continuer (ceci sera géré par la création automatique au démarrage)
+            // En fait, idéalement, on devrait empêcher toute inscription "teacher" via le formulaire
+            // si l'on ne veut qu'UN SEUL compte. L'option de création au démarrage est plus simple.
+            // Si vous voulez tout de même autoriser "teacher/123456" via le formulaire,
+            // alors cette partie de code est correcte.
+            // Pour l'exemple, nous allons le laisser et compter sur la création au démarrage.
+        }
+        // =========================================================================
+
+        let classroom = null;
+        if (role === 'student') {
+            if (!classroomCode) {
+                console.log('Échec inscription (élève): Code de classe manquant.');
+                return res.render('register', { error: 'Le code de classe est requis pour les élèves.' });
+            }
+            classroom = await Classroom.findOne({ classCode: classroomCode });
+            if (!classroom) {
+                console.log('Échec inscription (élève): Code de classe invalide:', classroomCode);
+                return res.render('register', { error: 'Code de classe invalide.' });
+            }
+            console.log('Classe trouvée pour l\'élève:', classroom.name, '(', classroom.classCode, ')');
+        }
+
+        // IMPORTANT : Si votre modèle User a un hook 'pre-save' pour hacher le mot de passe,
+        // vous n'avez pas besoin de bcrypt.hash(password, 10) ici.
+        // Si vous n'avez PAS de hook, décommentez la ligne ci-dessous et utilisez 'hashedPassword'.
+        const hashedPassword = await bcrypt.hash(password, 10); // Hachez le mot de passe ici si non fait par le modèle
+
+        user = new User({
+            username,
+            password: hashedPassword, // Utilisez le mot de passe haché
+            role,
+            classroom: classroom ? classroom._id : null
+        });
+
+        await user.save();
+        console.log('Utilisateur enregistré en DB avec succès:', user.username, 'ID:', user._id);
+        console.log('Mot de passe sauvegardé en DB (vérification hachage):', user.password ? 'Haché présent' : 'Haché absent');
+
+
+        if (classroom) {
+            classroom.students.push(user._id);
+            await classroom.save();
+            console.log('Élève', user.username, 'ajouté à la classe', classroom.name);
+        }
+
+        const populatedUser = await User.findById(user._id).populate('classroom');
+
+        req.session.user = {
+            _id: populatedUser._id,
+            username: populatedUser.username,
+            role: populatedUser.role,
+        };
+        if (populatedUser.classroom) {
+            req.session.user.classroom = populatedUser.classroom._id;
+            req.session.user.classroomName = populatedUser.classroom.name;
+        } else {
+            req.session.user.classroom = null;
+            req.session.user.classroomName = null;
+        }
+        console.log('Session utilisateur établie pour:', req.session.user.username);
+        console.log('Session classroom:', req.session.user.classroom);
+        console.log('Session classroomName:', req.session.user.classroomName);
+
+        req.session.save((err) => {
+            if (err) {
+                console.error('Error saving session after registration:', err);
+                return res.status(500).render('register', { error: 'Erreur lors de la session. Réessayez.' });
+            }
+
+            if (populatedUser.role === 'teacher') {
+                res.redirect('/teacher/dashboard?message=' + encodeURIComponent('Compte professeur créé et connecté avec succès !'));
+            } else {
+                res.redirect('/student/dashboard?message=' + encodeURIComponent('Compte élève créé et connecté avec succès !'));
+            }
+        });
+
+    } catch (error) {
+        console.error("!!! ERREUR LORS DE L'INSCRIPTION !!!", error);
+        res.render('register', { error: 'Erreur lors de l\'inscription. Veuillez réessayer. (Voir les logs serveur pour plus de détails)' });
+    }
+});
+
+// --- Route pour afficher le formulaire de connexion (GET) ---
+router.get('/login', (req, res) => {
+    res.render('login', { title: 'Connexion', error: null, message: req.query.message || null });
+});
+
+// --- Route de connexion (POST) ---
+router.post('/login', async (req, res) => {
+    try {
+        const { username, password } = req.body;
+
+        console.log('\n--- Tentative de Connexion ---');
+        console.log('Nom d\'utilisateur reçu:', username);
+        console.log('Mot de passe reçu (présence):', password ? 'Oui' : 'Non');
+
+        const user = await User.findOne({ username }).populate('classroom');
+
+        if (!user) {
+            console.log('Échec connexion: Nom d\'utilisateur ou mot de passe incorrect pour:', username);
+            return res.render('login', { error: 'Nom d\'utilisateur ou mot de passe incorrect.', message: null });
+        }
+        console.log('Utilisateur trouvé en DB:', user.username, 'Rôle:', user.role);
+
+        // Assurez-vous que `comparePassword` est défini dans votre modèle User.
+        // C'est une méthode que vous devriez ajouter à votre schéma User pour comparer le mot de passe haché.
+        const isMatch = await user.comparePassword(password);
+
+        if (!isMatch) {
+            console.log('Échec connexion: Mot de passe incorrect pour l\'utilisateur:', username);
+            return res.render('login', { error: 'Nom d\'utilisateur ou mot de passe incorrect.', message: null });
+        }
+
+        req.session.user = {
+            _id: user._id,
+            username: user.username,
+            role: user.role
+        };
+
+        if (user.classroom) {
+            req.session.user.classroom = user.classroom._id;
+            req.session.user.classroomName = user.classroom.name;
+        } else {
+            req.session.user.classroom = null;
+            req.session.user.classroomName = null;
+        }
+        console.log('Connexion réussie! Session établie pour:', user.username);
+        console.log('Session classroom (ID):', req.session.user.classroom);
+        console.log('Session classroomName:', req.session.user.classroomName);
+
+        req.session.save((err) => {
+            if (err) {
+                console.error('Error saving session after login:', err);
+                return res.status(500).render('login', { error: 'Erreur lors de la session. Réessayez.' });
+            }
+
+            if (user.role === 'teacher') {
+                res.redirect('/teacher/dashboard');
+            } else if (user.role === 'student') {
+                res.redirect('/student/dashboard');
+            } else {
+                console.warn('Rôle inconnu ou non géré pour l\'utilisateur:', user.username, 'Redirection vers l\'accueil.');
+                res.redirect('/');
+            }
+        });
+
+    } catch (error) {
+        console.error("!!! ERREUR LORS DE LA CONNEXION !!!", error);
+        res.render('login', { error: 'Une erreur interne est survenue lors de la connexion. (Voir les logs serveur pour plus de détails)', message: null });
+    }
+});
+
+// --- Route de déconnexion ---
+router.get('/logout', (req, res) => {
+    console.log('\n--- Tentative de Déconnexion ---');
+    if (req.session.user) {
+        console.log('Déconnexion de l\'utilisateur:', req.session.user.username);
+    } else {
+        console.log('Tentative de déconnexion sans utilisateur en session.');
+    }
+
+    req.session.destroy(err => {
+        if (err) {
+            console.error('!!! ERREUR LORS DE LA DÉCONNEXION !!!', err);
+            return res.redirect('/error?message=' + encodeURIComponent('Erreur lors de la déconnexion.'));
+        }
+        res.clearCookie('connect.sid');
+        console.log('Session détruite et cookie de session effacé.');
+        res.redirect('/login?message=' + encodeURIComponent('Vous avez été déconnecté avec succès.'));
+    });
+});
+
+module.exports = router;

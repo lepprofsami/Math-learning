@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de bord Élève - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Tableau de bord Élève</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                <li><a href="/student/dashboard">Mon tableau de bord</a></li>
+                <li><a href="/logout">Déconnexion</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Bienvenue, Élève <%= user.username %> !</h2> <p>C'est ici que vous verrez vos cours, vos devoirs et le chat de votre classe.</p>
+        <p>Votre classe actuelle est :
+            <% if (user.classroomName) { %>
+                <strong><%= user.classroomName %></strong>
+                <br>
+                <a href="/classes/<%= user.classroom %>" class="button">Accéder à ma classe</a>
+            <% } else { %>
+                Non assignée (contactez votre professeur pour obtenir un code de classe.)
+            <% } %>
+        </p>
+
+        <hr>
+
+        
+    </main>
+    <footer>
+        <p>&copy; 2025 Math-learning</p>
+    </footer>
+</body>
+</html>

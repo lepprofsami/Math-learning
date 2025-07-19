@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tableau de bord Professeur - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Tableau de bord de <%= user.username || user.email %></h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                <li><a href="/logout">Déconnexion</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <% if (typeof message !== 'undefined' && message) { %>
+            <p class="success-message"><%= message %></p>
+        <% } %>
+        <% if (typeof error !== 'undefined' && error) { %>
+            <p class="error-message"><%= error %></p>
+        <% } %>
+
+        <section class="class-management">
+            <h2>Mes classes</h2>
+            <% if (classes && classes.length > 0) { %>
+                <ul class="class-list">
+                    <% classes.forEach(function(classroom) { %>
+                        <li>
+                            <h3><a href="/classes/<%= classroom._id %>"><%= classroom.name %></a> (Code: <%= classroom.classCode %>)</h3>
+                            <p>Élèves inscrits : <%= classroom.students ? classroom.students.length : 0 %></p>
+                            <% if (classroom.students && classroom.students.length > 0) { %>
+                                <ul>
+                                    <% classroom.students.forEach(function(student) { %>
+                                        <li><%= student.username || student.email %></li>
+                                    <% }); %>
+                                </ul>
+                            <% } else { %>
+                                <p>Aucun élève inscrit pour le moment.</p>
+                            <% } %>
+                        </li>
+                    <% }); %>
+                </ul>
+            <% } else { %>
+                <p>Vous n'avez pas encore créé de classes. Créez-en une nouvelle ci-dessous !</p>
+            <% } %>
+        </section>
+
+        <hr>
+
+        <section class="create-class">
+            <h2>Créer une nouvelle classe</h2>
+            <form action="/classes" method="POST">
+                <label for="className">Nom de la classe :</label>
+                <input type="text" id="className" name="name" required>
+
+                <label for="classCode">Code de la classe (ex: MATH2024) :</label>
+                <input type="text" id="classCode" name="classCode" required minlength="4">
+
+                <button type="submit" class="button">Créer la classe</button>
+            </form>
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2025 Math-learning</p>
+    </footer>
+</body>
+</html>

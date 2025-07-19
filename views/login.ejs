@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connexion - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Connexion</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                <li><a href="/register">S'inscrire</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <div class="auth-container">
+            <h2>Connectez-vous à votre compte</h2>
+            <% if (typeof error !== 'undefined' && error) { %>
+                <p class="error-message"><%= error %></p>
+            <% } %>
+            <% if (typeof message !== 'undefined' && message) { %>
+                <p class="success-message"><%= message %></p>
+            <% } %>
+
+            <form action="/login" method="POST">
+                <label for="username">Nom d'utilisateur:</label>
+                <input type="text" id="username" name="username" required>
+
+                <label for="password">Mot de passe:</label>
+                <input type="password" id="password" name="password" required>
+
+                <button type="submit">Se connecter</button>
+            </form>
+            <p>Pas encore de compte ? <a href="/register">Inscrivez-vous ici</a>.</p>
+        </div>
+    </main>
+    <footer>
+        <p>&copy; 2025 Math-learning</p>
+    </footer>
+</body>
+</html>

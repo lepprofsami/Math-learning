@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Maclasse - Math-learning</title>
+    <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+    <header>
+        <h1>Maclasse (Code: 1234)</h1>
+        <nav>
+            <ul>
+                <li><a href="/">Accueil</a></li>
+                
+                    <li><a href="/teacher/dashboard">Tableau de bord Professeur</a></li>
+                
+                <li><a href="/logout">Déconnexion</a></li>
+            </ul>
+        </nav>
+    </header>
+    <main>
+        <h2>Détails de la classe : Maclasse</h2>
+        <p>Professeur : **leprofsami@gmail.com**</p>
+        <p>Nombre d'élèves inscrits : **0**</p>
+
+        <hr>
+
+        <section class="chat-container">
+            <h3>Chat de la classe</h3>
+            <div id="messages" class="chat-box">
+                
+                    
+                        <div class="message-item">
+                            <strong>leprofsami@gmail.com:</strong> bonjour
+                            <span class="timestamp">18/07/2025 18:36:22</span>
+                        </div>
+                    
+                
+            </div>
+            <form id="chatForm" class="chat-input-form">
+                <input type="text" id="messageInput" placeholder="Écrivez votre message..." required>
+                <button type="submit" class="button">Envoyer</button>
+            </form>
+        </section>
+
+        <hr>
+
+        <section class="files-container">
+            <h3>Dépôt de Fichiers</h3>
+            <form action="/classes/687a77f30dfc24b7d1728f6e/files" method="POST" enctype="multipart/form-data" class="file-upload-form">
+                <label for="fileUpload">Uploader un fichier :</label>
+                <input type="file" id="fileUpload" name="classFile" required>
+                <button type="submit" class="button">Uploader</button>
+            </form>
+
+            <ul class="file-list">
+                
+                    
+                        <li>
+                            
+                            <a href="#" target="_blank" download>
+                                Fichier sans nom
+                                
+                            </a>
+                            (Taille: N/A) -
+                            Uploadé par
+                            <strong>
+                                leprofsami@gmail.com
+                            </strong>
+                            le 18/07/2025
+                        </li>
+                    
+                        <li>
+                            
+                            <a href="#" target="_blank" download>
+                                Fichier sans nom
+                                
+                            </a>
+                            (Taille: N/A) -
+                            Uploadé par
+                            <strong>
+                                leprofsami@gmail.com
+                            </strong>
+                            le 18/07/2025
+                        </li>
+                    
+                
+            </ul>
+        </section>
+    </main>
+    <footer>
+        <p>&copy; 2024 Math-learning</p>
+    </footer>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        // CLIENT-SIDE JAVASCRIPT FOR CHAT
+        const socket = io();
+        const classroomId = '687a77f30dfc24b7d1728f6e';
+        const userEmail = 'leprofsami@gmail.com'; // Pour afficher le nom de l'expéditeur
+        const messagesDiv = document.getElementById('messages');
+        const messageInput = document.getElementById('messageInput');
+        const chatForm = document.getElementById('chatForm');
+
+        // Rejoindre la salle de chat spécifique à la classe
+        socket.emit('joinRoom', classroomId);
+
+        // Envoyer un message
+        chatForm.addEventListener('submit', (e) => {
+            e.preventDefault();
+            const content = messageInput.value.trim();
+            if (content) {
+                socket.emit('chatMessage', { classroomId, content });
+                messageInput.value = '';
+                // Défilement automatique vers le bas
+                messagesDiv.scrollTop = messagesDiv.scrollHeight;
+            }
+        });
+
+        // Recevoir un message
+        socket.on('message', (msg) => {
+            const messageElement = document.createElement('div');
+            messageElement.classList.add('message-item');
+            messageElement.innerHTML = `
+                <strong>${msg.senderEmail}:</strong> ${msg.content}
+                <span class="timestamp">${new Date(msg.timestamp).toLocaleString()}</span>
+            `;
+            messagesDiv.appendChild(messageElement);
+            // Défilement automatique vers le bas lors de la réception d'un nouveau message
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        });
+
+        // Défilement initial vers le bas pour voir les derniers messages
+        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+    </script>
+</body>
+</html>

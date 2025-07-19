@@ -1,0 +1,327 @@
+/* public/css/style.css */
+
+:root {
+    --primary-color: #007bff; /* Un bleu vif, à adapter selon votre charte */
+    --secondary-color: #6c757d; /* Un gris, à adapter selon votre charte */
+    --accent-color: #28a745; /* Exemple: un vert pour les actions positives */
+    --text-color: #333; /* Couleur de texte générale */
+    --background-color: #f4f7f6; /* Couleur de fond de la page */
+    --card-bg: #ffffff; /* Fond des cartes/panneaux */
+    --border-color: #e0e0e0; /* Couleur des bordures */
+    --shadow-light: 0 4px 8px rgba(0, 0, 0, 0.1); /* Ombre légère */
+}
+
+body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: var(--background-color); /* Correction ici */
+    color: var(--text-color);
+    line-height: 1.6;
+}
+
+header {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 1rem 0;
+    text-align: center;
+    box-shadow: var(--shadow-light);
+}
+
+header h1 {
+    margin: 0;
+    font-size: 2.5rem;
+}
+
+nav ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    justify-content: center;
+}
+
+nav ul li {
+    margin: 0 15px;
+}
+
+nav ul li a {
+    color: white;
+    text-decoration: none;
+    font-weight: bold;
+    transition: color 0.3s ease;
+}
+
+nav ul li a:hover {
+    color: var(--secondary-color);
+}
+
+main {
+    padding: 2rem;
+    max-width: 900px;
+    margin: 2rem auto;
+    background-color: var(--card-bg);
+    border-radius: 8px;
+    box-shadow: var(--shadow-light);
+}
+
+h1, h2, h3 {
+    color: var(--primary-color);
+    text-align: center;
+    margin-bottom: 1.5rem;
+}
+
+form {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 400px;
+    margin: 0 auto;
+    padding: 20px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    background-color: #f9f9f9;
+}
+
+form label {
+    font-weight: bold;
+    margin-bottom: 5px;
+    color: var(--text-color);
+}
+
+form input[type="email"],
+form input[type="password"],
+form input[type="text"],
+form select {
+    padding: 10px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    font-size: 1rem;
+    width: 100%;
+    box-sizing: border-box; /* Inclut le padding dans la largeur */
+}
+
+form input[type="email"]:focus,
+form input[type="password"]:focus,
+form input[type="text"]:focus,
+form select:focus {
+    border-color: var(--secondary-color);
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2); /* Ombre bleue */
+}
+
+form button {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 12px 20px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: background-color 0.3s ease, transform 0.2s ease;
+}
+
+form button:hover {
+    background-color: darken(var(--primary-color), 10%); /* Une version plus foncée du vert */
+    transform: translateY(-2px);
+}
+
+p {
+    text-align: center;
+    margin-top: 1.5rem;
+}
+
+a {
+    color: var(--secondary-color);
+    text-decoration: none;
+    transition: color 0.3s ease;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+footer {
+    text-align: center;
+    padding: 1.5rem 0;
+    margin-top: 2rem;
+    color: #777;
+    font-size: 0.9rem;
+    border-top: 1px solid var(--border-color);
+}
+/* ... (votre CSS existant) ... */
+
+/* Styles spécifiques pour les détails de la classe */
+.chat-container, .files-container {
+    background-color: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 2rem;
+    box-shadow: var(--shadow-light);
+}
+
+.chat-box {
+    height: 300px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 10px;
+    margin-bottom: 15px;
+    background-color: #e9ecef;
+}
+
+.message-item {
+    background-color: #f8f9fa;
+    padding: 8px 12px;
+    margin-bottom: 8px;
+    border-radius: 6px;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    word-wrap: break-word; /* Pour les longs messages */
+}
+
+.message-item strong {
+    color: var(--primary-color);
+}
+
+.message-item .timestamp {
+    font-size: 0.75rem;
+    color: #777;
+    float: right; /* Pour aligner le timestamp à droite */
+    margin-left: 10px;
+}
+
+.chat-input-form {
+    display: flex;
+    gap: 10px;
+}
+
+.chat-input-form input[type="text"] {
+    flex-grow: 1;
+    padding: 10px;
+    border-radius: 4px;
+    border: 1px solid var(--border-color);
+}
+
+.chat-input-form button {
+    padding: 10px 15px;
+    background-color: var(--secondary-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.chat-input-form button:hover {
+    background-color: darken(var(--secondary-color), 10%);
+}
+
+.file-upload-form {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 20px;
+    padding: 15px;
+    border: 1px dashed var(--border-color);
+    border-radius: 8px;
+    background-color: #f0f3f5;
+}
+
+.file-upload-form input[type="file"] {
+    padding: 8px;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    background-color: white;
+}
+
+.file-upload-form button {
+    background-color: var(--primary-color);
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.3s ease;
+}
+
+.file-upload-form button:hover {
+    background-color: darken(var(--primary-color), 10%);
+}
+
+.file-list {
+    list-style: none;
+    padding: 0;
+}
+
+.file-list li {
+    background-color: #f8f9fa;
+    padding: 10px 15px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.file-list li:last-child {
+    border-bottom: none;
+}
+
+.file-list li a {
+    color: var(--secondary-color);
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.file-list li a:hover {
+    text-decoration: underline;
+}
+/* Dans public/css/style.css */
+button,
+input[type="submit"],
+.button {
+    display: inline-block; /* Permet un contrôle total sur padding, margin, etc. */
+    padding: 10px 20px;
+    margin: 5px 0; /* Un peu de marge pour l'espacement */
+    font-size: 1rem;
+    font-weight: bold;
+    text-align: center;
+    text-decoration: none; /* Important pour les liens qui ressemblent à des boutons */
+    cursor: pointer;
+    border: none; /* Supprime la bordure par défaut */
+    border-radius: 5px; /* Coins arrondis */
+
+    background-color: var(--primary-color); /* Couleur de fond principale */
+    color: white; /* Couleur de texte par défaut */
+
+    /* Transition fluide pour tous les changements d'état */
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease, box-shadow 0.3s ease;
+}
+
+/* --- Styles de survol (hover) pour TOUS les boutons --- */
+button:hover,
+input[type="submit"]:hover,
+.button:hover {
+    /* Assombrissement subtil de la couleur primaire */
+    background-color: #0056b3; /* Exemple : un bleu légèrement plus foncé que #007bff */
+    color: white; /* **TRÈS IMPORTANT : Le texte reste blanc** pour une bonne lisibilité */
+    box-shadow: 0 6px 12px rgba(0, 0, 0, 0.15); /* Une ombre un peu plus prononcée */
+}
+
+/* --- Styles spécifiques pour certains formulaires qui pourraient avoir des boutons imbriqués --- */
+/* Pour le chat, les boutons sont dans un formulaire de chat */
+
+.chat-input-form button:hover {
+    /* Applique le même effet de survol que les autres boutons */
+    background-color: #0056b3; /* Ou la couleur de survol de votre choix */
+    color: white;
+}
+
+/* Pour le dépôt de fichiers, les boutons sont dans un formulaire d'upload */
+/* Similaire, si vous aviez des styles spécifiques ici */
+
+.file-upload-form button:hover {
+    /* Applique le même effet de survol */
+    background-color: #0056b3; /* Ou la couleur de survol de votre choix */
+    color: white;
+}
