@@ -1,6 +1,6 @@
 // models/Classroom.js
 const mongoose = require('mongoose');
-const User = require('./User'); // Assurez-vous que le modèle User est correctement importé si pas déjà
+const User = require('./user'); // Assurez-vous que le modèle User est correctement importé si pas déjà
 
 // Schema for individual file entries within a Classroom
 const fileSchema = new mongoose.Schema({
