@@ -1,7 +1,7 @@
 // routes/dashboard.js
 const express = require('express');
 const router = express.Router();
-const User = require('../models/User'); // Assuming you'll need the User model
+const User = require('../models/user'); // Assuming you'll need the User model
 const Classroom = require('../models/Classroom'); // Assuming you'll need the Classroom model
 const isAuthenticated = require('../middleware/isAuthenticated');
 // Middleware to ensure user is authenticated and has a role
