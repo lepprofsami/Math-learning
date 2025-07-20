@@ -7,7 +7,6 @@ const urlsToCache = [
   '/images/icons/icon-192x192.png',
   '/images/icons/icon-512x512.png'
   // Ajoutez ici toutes les autres ressources statiques que vous voulez mettre en cache
-  // N'ajoutez PAS d'URL dynamiques qui changent souvent (comme les dashboards après login)
 ];
 
 self.addEventListener('install', event => {
@@ -21,6 +20,13 @@ self.addEventListener('install', event => {
 });
 
 self.addEventListener('fetch', event => {
+  // *** NOUVELLE LIGNE AJOUTÉE ICI ***
+  // Ignorer les requêtes Socket.IO pour éviter les interférences
+  if (event.request.url.includes('/socket.io/')) {
+    return fetch(event.request); // Laisse le réseau gérer la requête Socket.IO directement
+  }
+  // *** FIN DE LA NOUVELLE LIGNE ***
+
   event.respondWith(
     caches.match(event.request)
       .then(response => {
