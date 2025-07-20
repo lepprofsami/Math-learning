@@ -56,5 +56,20 @@
     <footer>
         <p>&copy; 2025 Math-learning</p>
     </footer>
+
+<script>
+        // Ceci est le code client qui ENREGISTRE votre service-worker.js
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', function() {
+                navigator.serviceWorker.register('/service-worker.js').then(function(registration) {
+                    // Enregistrement réussi
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                }, function(err) {
+                    // Échec de l'enregistrement
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+            });
+        }
+    </script>
 </body>
 </html>
