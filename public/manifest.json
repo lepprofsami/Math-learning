@@ -2,17 +2,17 @@
   "name": "Math-learning",
   "short_name": "Math-learning",
   "description": "Votre plateforme interactive d'apprentissage des mathématiques.",
-  "id": "/", // NOUVEAU : ID de l'application
+  "id": "/", 
   "start_url": "/",
   "scope": "/", // NOUVEAU : Portée de l'application
   "display": "standalone",
-  "orientation": "any", // NOUVEAU : Orientation préférée
+  "orientation": "any", 
   "background_color": "#ffffff",
   "theme_color": "#4CAF50",
-  "lang": "fr", // NOUVEAU : Langue de l'application
-  "dir": "ltr", // NOUVEAU : Direction du texte
-  "categories": ["education", "math", "tools"], // NOUVEAU : Catégories
-  "prefer_related_applications": false, // NOUVEAU : Préférer la PWA aux apps natives liées
+  "lang": "fr", 
+  "dir": "ltr", 
+  "categories": ["education", "math", "tools"], 
+  "prefer_related_applications": false, 
   "icons": [
     {
       "src": "/images/icons/icon-192x192.png",
