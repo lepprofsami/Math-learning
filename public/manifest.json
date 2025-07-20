@@ -4,7 +4,7 @@
   "description": "Votre plateforme interactive d'apprentissage des mathématiques.",
   "id": "/", 
   "start_url": "/",
-  "scope": "/", // NOUVEAU : Portée de l'application
+  "scope": "/", 
   "display": "standalone",
   "orientation": "any", 
   "background_color": "#ffffff",
