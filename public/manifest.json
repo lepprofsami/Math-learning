@@ -1,0 +1,56 @@
+{
+  "name": "Math-learning",
+  "short_name": "Math-learning",
+  "description": "Votre plateforme interactive d'apprentissage des mathématiques.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#4CAF50",
+  "lang": "fr",
+  "dir": "ltr",
+  "categories": ["education", "math", "tools"],
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "/images/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/icons/icon-maskable-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/images/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "screenshots": [
+    {
+      "src": "/images/screenshots/desktop-screenshot.png",
+      "sizes": "1280x768",
+      "type": "image/png",
+      "form_factor": "wide"
+    },
+    {
+      "src": "/images/screenshots/mobile-screenshot.png",
+      "sizes": "768x1280",
+      "type": "image/png",
+      "form_factor": "narrow"
+    }
+  ]
+}
