@@ -1,17 +1,28 @@
 const express = require('express');
+const multer = require('multer');
 const mongoose = require('mongoose');
 const session = require('express-session');
 const http = require('http');
 const MongoStore = require('connect-mongo');
 const path = require('path');
 const socketIo = require('socket.io');
-const multer = require('multer'); // Import multer
-const fs = require('fs'); // Import fs for directory creation
 require('dotenv').config();
+
+// --- NOUVEL IMPORT CLOUDINARY ---
+const cloudinary = require('cloudinary').v2;
 
 const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
+
+// --- Configuration Cloudinary ---
+// Ces informations sont lues depuis les variables d'environnement
+cloudinary.config({
+    cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+    api_key: process.env.CLOUDINARY_API_KEY,
+    api_secret: process.env.CLOUDINARY_API_SECRET
+});
+// ---------------------------------------------
 
 // --- MongoDB Connection ---
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/math_learning';
@@ -30,7 +41,6 @@ app.set('views', path.join(__dirname, 'views'));
 app.set('io', io);
 
 // Servir les fichiers statiques (CSS, JS côté client, images)
-// THIS LINE IS CRUCIAL FOR SERVING UPLOADED IMAGES
 app.use(express.static(path.join(__dirname, 'public')));
 
 // --- Session Configuration avec connect-mongo ---
@@ -49,84 +59,184 @@ const sessionMiddleware = session({
 
 app.use(sessionMiddleware);
 
-// --- Middleware pour rendre 'user' disponible dans toutes les vues EJS ---
+// --- Middleware pour rendre 'user' et les messages flash disponibles dans toutes les vues EJS ---
 app.use((req, res, next) => {
     res.locals.user = req.session.user;
     next();
 });
 
-// --- Multer Configuration for Image Uploads ---
-const uploadDir = path.join(__dirname, 'public', 'uploads', 'chat-images');
-
-// Create the upload directory if it doesn't exist
-if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-    console.log(`Created upload directory: ${uploadDir}`);
-}
-
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, uploadDir); // Use the defined upload directory
-    },
-    filename: (req, file, cb) => {
-        // Generate a unique filename: timestamp-originalfilename.ext
-        cb(null, Date.now() + '-' + file.originalname);
-    }
-});
-
-const upload = multer({ 
-    storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // Limit file size to 5MB
+// --- Multer Configuration pour l'upload vers Cloudinary ---
+const upload = multer({
+    storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire, pas sur le disque
+    limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
     fileFilter: (req, file, cb) => {
-        // Allow only images
-        const filetypes = /jpeg|jpg|png|gif/;
-        const mimetype = filetypes.test(file.mimetype);
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
+        const allowedMimeTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+const mimetype = allowedMimeTypes.test(file.mimetype);   
+     const extname = allowedMimeTypes.test(path.extname(file.originalname).toLowerCase());
 
         if (mimetype && extname) {
             return cb(null, true);
         }
-        cb(new Error('Only images (jpeg, jpg, png, gif) are allowed!'));
+        cb(new Error('Seuls les fichiers images (jpeg, jpg, png, gif), PDF, DOC et DOCX sont autorisés !'));
     }
 });
+// --------------------------------------------------------------------------
 
-// --- Routes ---
+// --- Import des modèles et routes ---
+const Classroom = require('./models/Classroom'); // Assurez-vous que le modèle Classroom est bien importé
+
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
-const classRoutes = require('./routes/classRoutes');
-const Classroom = require('./models/Classroom'); // Ensure Classroom model is required for Socket.IO
+const classRoutes = require('./routes/classRoutes'); // Assurez-vous que cette route existe et gère vos vues de classe
 
+// --- Middleware pour vérifier l'authentification ---
+function isLoggedIn(req, res, next) {
+    if (req.session.user) {
+        return next();
+    }
+    res.locals.error = 'Veuillez vous connecter pour accéder à cette page.';
+    res.redirect('/login');
+}
+
+// --- Routes Générales ---
 app.use('/', authRoutes);
 app.use('/', dashboardRoutes);
-app.use('/classes', classRoutes);
+app.use('/classes', classRoutes); // Assurez-vous que les routes définies dans classRoutes ne rentrent pas en conflit
 
-// --- API Route for Image Upload ---
-app.post('/api/chat/upload-image', upload.single('chatImage'), (req, res) => {
-    if (req.file) {
-        // Construct the URL path relative to the 'public' directory
-        const imageUrl = `/uploads/chat-images/${req.file.filename}`;
-        res.json({ success: true, imageUrl: imageUrl });
-    } else {
-        // Handle cases where no file was uploaded or filter failed
-        let message = 'No file uploaded.';
-        if (req.fileFilterError) { // Custom error message from fileFilter
+// --- API Route pour l'upload de fichiers dans le CHAT vers Cloudinary ---
+app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
+    if (!req.file) {
+        let message = 'Aucun fichier n\'a été uploadé.';
+        if (req.fileFilterError) {
             message = req.fileFilterError.message;
-        } else if (req.multerError) { // Multer specific error
+        } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
+            message = 'Le fichier est trop volumineux ! Max 10MB autorisé.';
+        } else if (req.multerError) {
             message = req.multerError.message;
         }
-        res.status(400).json({ success: false, message: message });
+        return res.status(400).json({ success: false, message: message });
     }
-}, (error, req, res, next) => { // Multer error handling middleware
+
+    try {
+        const result = await new Promise((resolve, reject) => {
+            const uploadStream = cloudinary.uploader.upload_stream(
+                {
+                    resource_type: "auto",
+                    folder: 'chat_uploads' // Dossier spécifique pour les uploads de chat sur Cloudinary
+                },
+                (error, result) => {
+                    if (error) {
+                        return reject(error);
+                    }
+                    resolve(result);
+                }
+            );
+            uploadStream.end(req.file.buffer);
+        });
+
+        const publicUrl = result.secure_url;
+        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype });
+    } catch (error) {
+        console.error('Erreur lors de l\'upload vers Cloudinary (chat) :', error);
+        res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'upload du fichier.' });
+    }
+}, (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ success: false, message: 'File too large! Max 5MB allowed.' });
+            return res.status(400).json({ success: false, message: 'Fichier trop volumineux ! Max 10MB autorisé.' });
         }
         return res.status(400).json({ success: false, message: error.message });
     } else if (error) {
-        // Handle other errors, e.g., from fileFilter
         return res.status(400).json({ success: false, message: error.message });
     }
     next();
+});
+
+// --- NOUVELLE ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
+app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
+    try {
+        const classId = req.params.classId;
+        const file = req.file; // C'est l'objet Multer ici
+
+        // --- NOUVEAUX LOGS POUR DIAGNOSTIC ---
+        console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
+        console.log('1. Objet req.file reçu par Multer:', file);
+        if (file && file.buffer) {
+            console.log('   -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', file.buffer.length, 'octets.');
+        } else if (file && file.path) {
+            console.log('   -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', file.path);
+        } else {
+            console.log('   -> req.file est inattendu ou vide.');
+        }
+        // --- FIN NOUVEAUX LOGS ---
+
+        const { category } = req.body;
+
+        if (!file) {
+            res.locals.error = 'Aucun fichier n\'a été sélectionné.';
+            return res.redirect(`/classes/${classId}`);
+        }
+
+        if (!category) {
+            res.locals.error = 'Veuillez sélectionner une catégorie pour le fichier.';
+            return res.redirect(`/classes/${classId}`);
+        }
+
+        // Upload vers Cloudinary
+        const b64 = Buffer.from(file.buffer).toString('base64');
+        let dataURI = 'data:' + file.mimetype + ';base64,' + b64;
+
+        // --- NOUVEAU LOG ---
+        console.log('2. Tentative d\'upload vers Cloudinary...');
+        // --- FIN NOUVEAU LOG ---
+
+        const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
+            folder: `class_files/${classId}`, // Dossier Cloudinary par classe
+            resource_type: 'auto'
+        });
+
+        // --- NOUVEAUX LOGS POUR DIAGNOSTIC ---
+        console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
+        if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
+            console.log('   -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
+        } else {
+            console.error('   -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
+        }
+        // --- FIN NOUVEAUX LOGS ---
+
+        const fileUrl = cloudinaryUploadResult.secure_url;
+        const publicId = cloudinaryUploadResult.public_id; // Stocke l'ID public pour une éventuelle suppression future
+
+        const newFile = {
+            fileName: file.originalname,
+            filePath: fileUrl, // Enregistre l'URL Cloudinary
+            fileSize: file.size,
+            fileMimeType: file.mimetype,
+            uploadDate: new Date(),
+            uploader: req.session.user._id,
+            category: category,
+            publicId: publicId
+        };
+
+        // Votre log existant
+        console.log('4. Objet newFile prêt à être sauvegardé :', newFile);
+
+        const classroom = await Classroom.findById(classId);
+        if (!classroom) {
+            res.locals.error = 'Classe introuvable.';
+            return res.redirect('/');
+        }
+
+        classroom.files.push(newFile);
+        await classroom.save();
+
+        res.locals.success = 'Fichier uploadé et enregistré avec succès !';
+        res.redirect(`/classes/${classId}`);
+    } catch (error) {
+        console.error('Erreur CRITIQUE lors de l\'upload du fichier de classe (Dépôt) :', error);
+        res.locals.error = 'Erreur lors de l\'upload du fichier : ' + error.message;
+        res.redirect(`/classes/${req.params.classId}`);
+    }
 });
 
 // Route principale (accueil)
@@ -159,7 +269,6 @@ io.use((socket, next) => {
             console.error('Erreur lors de l\'accès à la session Socket.IO:', err);
             return next(err);
         }
-        // console.log('Session Socket.IO après middleware:', socket.request.session); // Can be verbose, uncomment for debugging
         next();
     });
 });
@@ -168,8 +277,6 @@ io.on('connection', (socket) => {
     console.log('Un utilisateur s\'est connecté :', socket.id);
 
     const userInSession = socket.request.session.user;
-
-    // console.log('Utilisateur dans la session Socket.IO (au moment de la connexion) :', userInSession); // Can be verbose
 
     if (!userInSession) {
         console.log('Utilisateur non authentifié via session, déconnexion du socket.');
@@ -186,7 +293,7 @@ io.on('connection', (socket) => {
     });
 
     // Modified chatMessage event to handle different message types
-    socket.on('chatMessage', async ({ classroomId, content, type, imageUrl }) => {
+    socket.on('chatMessage', async ({ classroomId, content, type, fileUrl }) => {
         const senderId = socket.userId;
         const senderUsername = socket.username;
 
@@ -195,7 +302,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        console.log(`Message reçu dans la classe ${classroomId} de ${senderUsername} (Type: ${type}):`, content || imageUrl);
+        console.log(`Message reçu dans la classe ${classroomId} de ${senderUsername} (Type: ${type}):`, content || fileUrl);
 
         try {
             const classroom = await Classroom.findById(classroomId);
@@ -207,21 +314,20 @@ io.on('connection', (socket) => {
             const newMessage = {
                 sender: senderId,
                 content: content,
-                type: type || 'text', // Default to 'text' if not specified
-                imageUrl: imageUrl, // Will be undefined if not an image message
+                type: type || 'text',
+                fileUrl: fileUrl,
                 timestamp: new Date()
             };
 
             classroom.messages.push(newMessage);
             await classroom.save();
 
-            // Emit the message to the room
             io.to(classroomId).emit('message', {
                 senderId: senderId,
                 senderUsername: senderUsername,
                 content: content,
                 type: type || 'text',
-                imageUrl: imageUrl,
+                fileUrl: fileUrl,
                 timestamp: newMessage.timestamp
             });
 

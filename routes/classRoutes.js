@@ -1,10 +1,32 @@
 const express = require('express');
 const router = express.Router();
-const Classroom = require('../models/Classroom'); // Make sure this path is correct
-const User = require('../models/User'); // Assuming you have a User model
+const Classroom = require('../models/Classroom'); // Assurez-vous que ce chemin est correct
+const User = require('../models/User'); // Assurez-vous que ce chemin est correct
 const isAuthenticated = require('../middleware/isAuthenticated');
-const isClassMember = require('../middleware/isClassMember'); // Used for :id routes
-const upload = require('../middleware/upload'); // Assuming you have an upload middleware for files
+const isClassMember = require('../middleware/isClassMember'); // Utilisé pour les routes :id
+
+// NOUVEAUX IMPORTS POUR L'UPLOAD CLOUDINARY
+const multer = require('multer');
+const cloudinary = require('cloudinary').v2; // Assurez-vous que Cloudinary est bien configuré globalement dans server.js
+const path = require('path'); // Nécessaire pour path.extname dans fileFilter
+
+// --- Multer Configuration pour l'upload de fichiers de classe vers Cloudinary ---
+// Cette instance de Multer est spécifique aux fichiers de classe, utilisant memoryStorage.
+const classFileUpload = multer({
+    storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire
+    limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
+    fileFilter: (req, file, cb) => {
+        const allowedMimeTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
+        const mimetype = allowedMimeTypes.test(file.mimetype);
+        const extname = allowedMimeTypes.test(path.extname(file.originalname).toLowerCase());
+
+        if (mimetype && extname) {
+            return cb(null, true);
+        }
+        cb(new Error('Seuls les fichiers images (jpeg, jpg, png, gif), PDF, DOC et DOCX sont autorisés !'));
+    }
+});
+// --------------------------------------------------------------------------
 
 // --- NOUVELLE ROUTE : POST / (pour créer une nouvelle classe) ---
 // Cette route sera accessible via POST /classes grâce à app.use('/classes', classRoutes) dans server.js
@@ -100,9 +122,9 @@ router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
         console.log(`Number of files: ${classroom.files ? classroom.files.length : 0}`);
         if (classroom.messages && classroom.messages.length > 0) {
             console.log('First message details:');
-            console.log(`  Sender: ${classroom.messages[0].sender ? classroom.messages[0].sender.username : 'N/A'}`);
-            console.log(`  Content: ${classroom.messages[0].content}`);
-            console.log(`  Timestamp: ${classroom.messages[0].timestamp}`);
+            console.log(`  Sender: ${classroom.messages[0].sender ? classroom.messages[0].sender.username : 'N/A'}`);
+            console.log(`  Content: ${classroom.messages[0].content}`);
+            console.log(`  Timestamp: ${classroom.messages[0].timestamp}`);
         }
         console.log('------------------------------------');
         // --- END DEBUGGING LOGS ---
@@ -149,12 +171,12 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
         // This requires `io` instance to be accessible, usually via `req.app.get('io')`
         if (req.app.get('io')) {
              req.app.get('io').to(req.params.id).emit('message', {
-                senderId: savedMessage.sender._id,
-                senderUsername: savedMessage.sender.username, // Use username for display
-                content: savedMessage.content,
-                type: savedMessage.type,
-                timestamp: savedMessage.timestamp
-            });
+                 senderId: savedMessage.sender._id,
+                 senderUsername: savedMessage.sender.username, // Use username for display
+                 content: savedMessage.content,
+                 type: savedMessage.type,
+                 timestamp: savedMessage.timestamp
+             });
         } else {
             console.warn("Socket.IO instance not available in classRoutes for message emission.");
         }
@@ -168,48 +190,102 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
 });
 
 // Upload a file to the classroom
-router.post('/:id/files', isAuthenticated, isClassMember, upload.single('classFile'), async (req, res) => {
+router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single('classFile'), async (req, res) => {
     try {
-        const classroom = await Classroom.findById(req.params.id);
+        const classId = req.params.id; // Renommé pour clarté
+        const classroom = await Classroom.findById(classId);
+
         if (!classroom) {
-            return res.status(404).render('error', { message: 'Classe introuvable.' });
+            res.locals.error = 'Classe introuvable.';
+            return res.redirect(`/classes/${classId}`);
         }
 
+        // Gérer les erreurs Multer (par exemple, fichier non sélectionné ou trop gros)
         if (!req.file) {
-            return res.status(400).render('error', { message: 'Aucun fichier n\'a été uploadé.' });
+            let errorMessage = 'Aucun fichier n\'a été sélectionné.';
+            // Multer renvoie des erreurs via `err` dans le callback, pas directement dans `req.fileFilterError` ou `req.multerError`
+            // Il faut donc capturer cela au niveau du middleware Multer si l'on veut des messages plus spécifiques ici.
+            // Pour l'instant, on se base sur l'absence de req.file.
+            res.locals.error = errorMessage;
+            return res.redirect(`/classes/${classId}`);
         }
 
-        const { category, folder } = req.body;
+        const { category } = req.body;
 
         const allowedCategories = ['exercise', 'homework', 'correction', 'general'];
         if (!category || !allowedCategories.includes(category)) {
-            return res.redirect(`/classes/${req.params.id}?error=${encodeURIComponent('Catégorie de fichier invalide. Choisissez parmi Exercice, Devoir, Correction, Général.')}`);
+            res.locals.error = 'Catégorie de fichier invalide. Choisissez parmi Exercice, Devoir, Correction, Général.';
+            return res.redirect(`/classes/${classId}`);
         }
+
+        // --- Log pour diagnostic (comme demandé précédemment) ---
+        console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
+        console.log('1. Objet req.file reçu par Multer:', req.file);
+        if (req.file && req.file.buffer) {
+            console.log('   -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', req.file.buffer.length, 'octets.');
+        } else if (req.file && req.file.path) { // Ce cas ne devrait plus arriver avec memoryStorage
+            console.log('   -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', req.file.path);
+        } else {
+            console.log('   -> req.file est inattendu ou vide.');
+        }
+        // --- FIN NOUVEAUX LOGS ---
+
+        // Upload vers Cloudinary
+        const b64 = Buffer.from(req.file.buffer).toString('base64');
+        let dataURI = 'data:' + req.file.mimetype + ';base64,' + b64;
+
+        console.log('2. Tentative d\'upload vers Cloudinary...');
+
+        const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
+            folder: `class_files/${classId}`, // Dossier Cloudinary par classe
+            resource_type: 'raw'
+        });
+
+        // --- Logs pour diagnostic ---
+        console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
+        if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
+            console.log('   -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
+        } else {
+            console.error('   -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
+            res.locals.error = 'Erreur: Cloudinary n\'a pas retourné d\'URL pour le fichier.';
+            return res.redirect(`/classes/${classId}`);
+        }
+        // --- FIN NOUVEAUX LOGS ---
+
+        const fileUrl = cloudinaryUploadResult.secure_url;
+        const publicId = cloudinaryUploadResult.public_id;
 
         const newFile = {
             fileName: req.file.originalname,
-            filePath: req.file.path,
+            filePath: fileUrl, // <--- MAINTENANT C'EST L'URL CLOUDINARY !
             fileSize: req.file.size,
             fileMimeType: req.file.mimetype,
-            uploader: req.session.user._id,
             uploadDate: new Date(),
+            uploader: req.session.user._id,
             category: category,
-            folder: folder || 'General'
+            publicId: publicId // Enregistrez l'ID public pour la gestion future
         };
+
+        console.log('4. Objet newFile prêt à être sauvegardé :', newFile);
 
         classroom.files.push(newFile);
         await classroom.save();
 
-        res.redirect(`/classes/${req.params.id}?message=${encodeURIComponent('Fichier uploadé avec succès !')}`);
+        res.locals.success = 'Fichier uploadé et enregistré avec succès !';
+        res.redirect(`/classes/${classId}`);
     } catch (error) {
-        console.error("Error uploading file:", error);
-        let errorMessage = 'Erreur serveur lors de l\'upload du fichier.';
-        if (error.name === 'ValidationError') {
-            errorMessage = `Erreur de validation: ${error.message}`;
-        } else if (error.message.includes('file type')) {
-            errorMessage = error.message;
+        console.error('Erreur CRITIQUE lors de l\'upload du fichier de classe (Dépôt) :', error);
+        let errorMessage = 'Erreur serveur lors de l\'upload du fichier : ' + error.message;
+        // Gérer les erreurs spécifiques de Multer si elles sont lancées ici (ex: taille limite)
+        if (error instanceof multer.MulterError) {
+            if (error.code === 'LIMIT_FILE_SIZE') {
+                errorMessage = 'Le fichier est trop volumineux (max 10MB) !';
+            }
+        } else if (error.message.includes('Type de fichier non autorisé')) { // Pour l'erreur de fileFilter
+             errorMessage = 'Type de fichier non autorisé !';
         }
-        res.redirect(`/classes/${req.params.id}?error=${encodeURIComponent(errorMessage)}`);
+        res.locals.error = errorMessage;
+        res.redirect(`/classes/${req.params.id}`);
     }
 });
 

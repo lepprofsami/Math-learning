@@ -67,6 +67,21 @@
             border-radius: 5px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Petite ombre pour un meilleur rendu */
         }
+
+        /* NOUVEAU: Style pour les liens de documents */
+        .message-item .chat-document {
+            display: inline-block; /* Permet le padding et margin */
+            background-color: #e9ecef;
+            padding: 5px 10px;
+            border-radius: 5px;
+            text-decoration: none;
+            color: #007bff;
+            font-weight: bold;
+        }
+        .message-item .chat-document:hover {
+            background-color: #dee2e6;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -110,7 +125,11 @@
                                 <% } %>
                             :</strong>
                             <% if (message.type === 'image') { %>
-                                <img src="<%= message.imageUrl %>" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">
+                                <img src="<%= message.fileUrl %>" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">
+                            <% } else if (message.type === 'file') { %>
+                                <a href="<%= message.fileUrl %>" target="_blank" class="chat-document">
+                                    <i class="fas fa-file"></i> Télécharger le document (<%= message.content || 'Fichier' %>)
+                                </a>
                             <% } else { %>
                                 <%= message.content %>
                             <% } %>
@@ -122,13 +141,13 @@
                 <% } %>
             </div>
             <div class="chat-input-controls">
-                <input type="file" id="imageUploadInput" accept="image/*" style="display: none;">
-                <button type="button" id="uploadImageButton" class="button">Image (<i class="fas fa-image" style="vertical-align: middle;"></i>)</button>
+                <input type="file" id="fileUploadInput" name="file" accept="image/*,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" style="display: none;">
+                <button type="button" id="uploadFileButton" class="button">Fichier (<i class="fas fa-paperclip" style="vertical-align: middle;"></i>)</button>
             </div>
-            <div id="imagePreview" class="image-preview-container" style="display: none;">
-                <img id="previewImage" src="#" alt="Aperçu de l'image">
-                <span id="imageFileName"></span>
-                <button type="button" id="removeImageButton" class="remove-image-button">X</button>
+            <div id="filePreview" class="image-preview-container" style="display: none;">
+                <span id="previewContent"></span> 
+                <span id="fileName"></span>
+                <button type="button" id="removeFileButton" class="remove-image-button">X</button>
             </div>
             <form id="chatForm" class="chat-input-form">
                 <input type="text" id="messageInput" placeholder="Écrivez votre message..." required>
@@ -176,13 +195,19 @@
                     <% categorizedFiles.exercise.forEach(function(file) { %>
                         <li>
                             <%
+                                // ATTENTION: Cette section utilise toujours le chemin local '/uploads/'.
+                                // Elle nécessitera des modifications pour utiliser Cloudinary si vous voulez uploader ces fichiers là aussi.
                                 let displayFileName = file.fileName || 'Fichier sans nom';
-                                let fileUrl = '#';
-                                if (file.filePath && typeof file.filePath === 'string') {
+                                let fileUrl = '#'; // Fallback
+                                // Si file.filePath est une URL Cloudinary, utilisez-la directement
+                                if (file.filePath && typeof file.filePath === 'string' && file.filePath.startsWith('http')) {
+                                    fileUrl = file.filePath;
+                                } else if (file.filePath && typeof file.filePath === 'string') {
+                                    // Ancien chemin local, à terme à supprimer ou adapter
                                     const pathParts = file.filePath.split(/[\\/]/);
                                     const fileNameInPath = pathParts[pathParts.length - 1];
                                     if (fileNameInPath) {
-                                        fileUrl = "/uploads/" + fileNameInPath;
+                                        fileUrl = "/uploads/" + fileNameInPath; // Cela ne fonctionnera plus sur Render sans stockage local
                                     }
                                 }
                             %>
@@ -214,7 +239,9 @@
                             <%
                                 let displayFileName = file.fileName || 'Fichier sans nom';
                                 let fileUrl = '#';
-                                if (file.filePath && typeof file.filePath === 'string') {
+                                if (file.filePath && typeof file.filePath === 'string' && file.filePath.startsWith('http')) {
+                                    fileUrl = file.filePath;
+                                } else if (file.filePath && typeof file.filePath === 'string') {
                                     const pathParts = file.filePath.split(/[\\/]/);
                                     const fileNameInPath = pathParts[pathParts.length - 1];
                                     if (fileNameInPath) {
@@ -250,7 +277,9 @@
                             <%
                                 let displayFileName = file.fileName || 'Fichier sans nom';
                                 let fileUrl = '#';
-                                if (file.filePath && typeof file.filePath === 'string') {
+                                if (file.filePath && typeof file.filePath === 'string' && file.filePath.startsWith('http')) {
+                                    fileUrl = file.filePath;
+                                } else if (file.filePath && typeof file.filePath === 'string') {
                                     const pathParts = file.filePath.split(/[\\/]/);
                                     const fileNameInPath = pathParts[pathParts.length - 1];
                                     if (fileNameInPath) {
@@ -299,17 +328,17 @@
         const messageInput = document.getElementById('messageInput');
         const chatForm = document.getElementById('chatForm');
 
-        // Nouveaux éléments pour les images
-        const uploadImageButton = document.getElementById('uploadImageButton');
-        const imageUploadInput = document.getElementById('imageUploadInput');
-        const imagePreviewContainer = document.getElementById('imagePreview');
-        const previewImage = document.getElementById('previewImage');
-        const imageFileNameSpan = document.getElementById('imageFileName');
-        const removeImageButton = document.getElementById('removeImageButton');
+        // Éléments pour l'upload de fichiers (MODIFIÉS)
+        const uploadFileButton = document.getElementById('uploadFileButton'); // ID MODIFIÉ
+        const fileUploadInput = document.getElementById('fileUploadInput');     // ID MODIFIÉ
+        const filePreviewContainer = document.getElementById('filePreview');   // ID MODIFIÉ
+        const previewContent = document.getElementById('previewContent');     // NOUVEAU pour le contenu d'aperçu
+        const fileNameSpan = document.getElementById('fileName');             // ID MODIFIÉ
+        const removeFileButton = document.getElementById('removeFileButton');   // ID MODIFIÉ
 
-        let selectedImageFile = null;
-        let currentMessageType = 'text'; // Peut être 'text' ou 'image'
-        let currentImageUrl = ''; // Pour stocker l'URL de l'image après l'upload
+        let selectedFile = null; // MODIFIÉ: Renommé selectedImageFile en selectedFile
+        let currentMessageType = 'text'; // Peut être 'text', 'image' ou 'file'
+        let currentFileUrl = ''; // MODIFIÉ: Renommé currentImageUrl en currentFileUrl
 
         // Confirmer le chargement du client Socket.IO
         console.log("Socket.IO client loaded.");
@@ -324,35 +353,44 @@
             console.error("Classroom ID is not defined for Socket.IO joinRoom.");
         }
 
-        // --- Logique d'upload d'images ---
-        uploadImageButton.addEventListener('click', () => {
-            imageUploadInput.click(); // Simule le clic sur l'input de type file
+        // --- Logique d'upload de fichiers (MODIFIÉE) ---
+        uploadFileButton.addEventListener('click', () => {
+            fileUploadInput.click(); // Simule le clic sur l'input de type file
         });
 
-        imageUploadInput.addEventListener('change', (event) => {
+        fileUploadInput.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (file) {
-                selectedImageFile = file;
-                previewImage.src = URL.createObjectURL(file); // Affiche un aperçu de l'image
-                imageFileNameSpan.textContent = file.name; // Affiche le nom du fichier
-                imagePreviewContainer.style.display = 'flex'; // Affiche le conteneur d'aperçu
+                selectedFile = file; // MODIFIÉ
+                fileNameSpan.textContent = file.name; // Affiche le nom du fichier
+                filePreviewContainer.style.display = 'flex'; // Affiche le conteneur d'aperçu
 
-                // Désactive le champ de message textuel et change le type de message
-                messageInput.value = '[Image insérée]'; // Indique qu'une image est prête
+                // Aperçu spécifique selon le type de fichier
+                if (file.type.startsWith('image/')) {
+                    previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Aperçu de l'image" style="max-width:100px; max-height:100px; border-radius:3px;">`;
+                    currentMessageType = 'image';
+                } else if (file.type === 'application/pdf') {
+                    previewContent.innerHTML = `<i class="fas fa-file-pdf" style="font-size: 40px; color: #dc3545;"></i>`;
+                    currentMessageType = 'file';
+                } else if (file.type === 'application/msword' || file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+                    previewContent.innerHTML = `<i class="fas fa-file-word" style="font-size: 40px; color: #007bff;"></i>`;
+                    currentMessageType = 'file';
+                } else {
+                    previewContent.innerHTML = `<i class="fas fa-file" style="font-size: 40px; color: #6c757d;"></i>`;
+                    currentMessageType = 'file';
+                }
+
+                // Désactive le champ de message textuel
+                messageInput.value = `[${file.type.startsWith('image/') ? 'Image' : 'Fichier'} inséré: ${file.name}]`;
                 messageInput.disabled = true;
-                currentMessageType = 'image';
             } else {
                 // Si aucun fichier n'est sélectionné ou si l'utilisateur annule
-                imagePreviewContainer.style.display = 'none';
-                selectedImageFile = null;
-                currentMessageType = 'text';
-                messageInput.value = '';
-                messageInput.disabled = false;
+                resetChatInput();
             }
         });
 
-        removeImageButton.addEventListener('click', () => {
-            resetChatInput(); // Réinitialise l'input du chat, y compris l'image
+        removeFileButton.addEventListener('click', () => { // MODIFIÉ
+            resetChatInput(); // Réinitialise l'input du chat, y compris le fichier
         });
 
         // 2. Gérer l'envoi d'un message via le formulaire
@@ -365,40 +403,43 @@
                 content: messageInput.value.trim()
             };
 
-            if (currentMessageType === 'image' && selectedImageFile) {
+            if ((currentMessageType === 'image' || currentMessageType === 'file') && selectedFile) {
                 const formData = new FormData();
-                formData.append('chatImage', selectedImageFile); // 'chatImage' doit correspondre au nom attendu par Multer sur le serveur
+                // MODIFIÉ: 'file' doit correspondre au nom attendu par Multer sur le serveur
+                formData.append('file', selectedFile);
 
                 try {
-                    const response = await fetch('/api/chat/upload-image', { // Assurez-vous que cette route existe sur votre serveur
+                    // MODIFIÉ: L'URL de la route d'upload
+                    const response = await fetch('/api/chat/upload-file', {
                         method: 'POST',
                         body: formData
                     });
                     const result = await response.json();
 
                     if (result.success) {
-                        currentImageUrl = result.imageUrl;
-                        messageToSend.imageUrl = currentImageUrl; // Ajoute l'URL de l'image au message
-                        messageToSend.content = ''; // Le contenu textuel est vide pour un message image
-                        console.log('Image uploaded, URL:', currentImageUrl);
+                        currentFileUrl = result.fileUrl; // MODIFIÉ
+                        messageToSend.fileUrl = currentFileUrl; // MODIFIÉ
+                        messageToSend.content = selectedFile.name; // Envoie le nom du fichier comme contenu pour les fichiers
+                        messageToSend.type = result.fileType.startsWith('image/') ? 'image' : 'file'; // S'assure que le type est correct
+                        console.log('Fichier uploadé, URL:', currentFileUrl);
                     } else {
-                        alert('Erreur lors du téléchargement de l\'image : ' + result.message);
+                        alert('Erreur lors du téléchargement du fichier : ' + result.message);
                         resetChatInput();
                         return; // Empêche l'envoi du message si l'upload a échoué
                     }
                 } catch (error) {
-                    console.error('Erreur réseau ou serveur lors de l\'upload d\'image:', error);
-                    alert('Erreur réseau lors du téléchargement de l\'image.');
+                    console.error('Erreur réseau ou serveur lors de l\'upload de fichier:', error);
+                    alert('Erreur réseau lors du téléchargement du fichier.');
                     resetChatInput();
                     return; // Empêche l'envoi du message en cas d'erreur
                 }
             } else {
                 // Si c'est un message texte, s'assurer qu'il y a du contenu
                 if (!messageToSend.content) {
-                    alert('Veuillez écrire un message ou insérer une image.');
+                    alert('Veuillez écrire un message ou insérer un fichier.');
                     return;
                 }
-                messageToSend.type = 'text'; // S'assure que le type est 'text' si pas d'image
+                messageToSend.type = 'text'; // S'assure que le type est 'text' si pas de fichier
             }
 
             console.log('Client emitting chatMessage:', messageToSend);
@@ -409,18 +450,20 @@
             messagesDiv.scrollTop = messagesDiv.scrollHeight; // Fait défiler la boîte de messages vers le bas
         });
 
-        // Fonction pour réinitialiser l'input du chat
+        // Fonction pour réinitialiser l'input du chat (MODIFIÉE)
         function resetChatInput() {
             messageInput.value = '';
             messageInput.disabled = false;
             currentMessageType = 'text';
-            selectedImageFile = null;
-            currentImageUrl = '';
-            imageUploadInput.value = ''; // Réinitialise l'input de fichier pour permettre de sélectionner le même fichier à nouveau
-            imagePreviewContainer.style.display = 'none'; // Cache l'aperçu de l'image
+            selectedFile = null; // MODIFIÉ
+            currentFileUrl = ''; // MODIFIÉ
+            fileUploadInput.value = ''; // Réinitialise l'input de fichier pour permettre de sélectionner le même fichier à nouveau (MODIFIÉ)
+            filePreviewContainer.style.display = 'none'; // Cache l'aperçu du fichier (MODIFIÉ)
+            previewContent.innerHTML = ''; // VIDE le contenu de l'aperçu (NOUVEAU)
+            fileNameSpan.textContent = ''; // VIDE le nom du fichier (NOUVEAU)
         }
 
-        // 3. Gérer la réception d'un message du serveur
+        // 3. Gérer la réception d'un message du serveur (MODIFIÉE)
         socket.on('message', (msg) => {
             console.log('Client received message from server via socket:', msg);
 
@@ -430,11 +473,17 @@
             const senderDisplayName = msg.senderUsername || 'Utilisateur Inconnu';
             let messageContentHtml = '';
 
+            // MODIFIÉ: Gère 'image' ET 'file' (pour documents)
             if (msg.type === 'image') {
-                // Si le message est une image, crée une balise <img>
-                messageContentHtml = `<img src="${msg.imageUrl}" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">`;
+                messageContentHtml = `<img src="${msg.fileUrl}" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">`;
+            } else if (msg.type === 'file') {
+                // Pour les documents, affiche un lien de téléchargement
+                messageContentHtml = `
+                    <a href="${msg.fileUrl}" target="_blank" class="chat-document">
+                        <i class="fas fa-file"></i> Télécharger le document (${msg.content || 'Fichier'})
+                    </a>
+                `;
             } else {
-                // Sinon, affiche le contenu texte
                 messageContentHtml = msg.content;
             }
 
