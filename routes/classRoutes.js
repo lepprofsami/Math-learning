@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Classroom = require('../models/Classroom'); // Assurez-vous que ce chemin est correct
-const User = require('../models/User'); // Assurez-vous que ce chemin est correct
+const User = require('../models/user'); // Assurez-vous que ce chemin est correct
 const isAuthenticated = require('../middleware/isAuthenticated');
 const isClassMember = require('../middleware/isClassMember'); // Utilisé pour les routes :id
 
