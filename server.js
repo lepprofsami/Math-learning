@@ -70,7 +70,6 @@ const upload = multer({
     storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire, pas sur le disque
     limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
     fileFilter: (req, file, cb) => {
-        // **MODIFICATION ICI: Ajout d'une vérification robuste pour file.originalname**
         if (!file || !file.originalname) {
             console.error('Multer fileFilter: Fichier ou originalname manquant/null.', file);
             return cb(new Error('Fichier invalide ou nom de fichier manquant.'));
@@ -125,22 +124,22 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
 
     try {
         const fileType = req.file.mimetype;
-        let cloudinaryResourceType = 'auto'; // Par défaut, mais on va le rendre plus spécifique
+        let cloudinaryResourceType = 'auto';
 
-        // **MODIFICATION ICI: Ajustement du resource_type pour Cloudinary**
         if (fileType.startsWith('image/')) {
             cloudinaryResourceType = 'image';
         } else if (fileType === 'application/pdf' || fileType.includes('application/msword') || fileType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
-            // Utiliser includes car les types Word peuvent varier légèrement (e.g., 'application/msword' vs 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-            cloudinaryResourceType = 'raw'; // Utilisez 'raw' pour les documents non-image
+            cloudinaryResourceType = 'raw';
         }
-        // Pour les autres types de fichiers non explicitement listés, 'auto' restera.
 
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
-                    resource_type: cloudinaryResourceType, // <-- MODIFIÉ ICI
-                    folder: 'chat_uploads' // Dossier spécifique pour les uploads de chat sur Cloudinary
+                    resource_type: cloudinaryResourceType,
+                    folder: 'chat_uploads',
+                    // MODIFICATIONS ICI POUR LE CHAT :
+                    public_id: req.file.originalname, // Utiliser le nom original complet
+                    unique_filename: true // Gérer les noms de fichiers dupliqués
                 },
                 (error, result) => {
                     if (error) {
@@ -153,34 +152,30 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
         });
 
         const publicUrl = result.secure_url;
-        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype, fileName: req.file.originalname }); // Passez le fileType original et le nom de fichier de Multer au client
+        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
     } catch (error) {
         console.error('Erreur lors de l\'upload vers Cloudinary (chat) :', error);
         res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'upload du fichier.' });
     }
 }, (error, req, res, next) => {
-    // Ce middleware de gestion d'erreurs Multer capture les erreurs qui se produisent
-    // avant que la logique de la route ne soit exécutée (par exemple, dépassement de taille, type de fichier non autorisé).
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ success: false, message: 'Fichier trop volumineux ! Max 10MB autorisé.' });
         }
         return res.status(400).json({ success: false, message: error.message });
     } else if (error) {
-        // Attrape les erreurs génériques du fileFilter ou autres erreurs inattendues de Multer
         return res.status(400).json({ success: false, message: error.message });
     }
-    next(); // Si l'erreur n'est pas une erreur Multer, passer au prochain gestionnaire d'erreurs
+    next();
 });
 
 
-// --- NOUVELLE ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
+// --- ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
 app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
     try {
         const classId = req.params.classId;
-        const file = req.file; // C'est l'objet Multer ici
+        const file = req.file;
 
-        // --- NOUVEAUX LOGS POUR DIAGNOSTIC ---
         console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
         console.log('1. Objet req.file reçu par Multer:', file);
         if (file && file.buffer) {
@@ -190,14 +185,12 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         } else {
             console.log('    -> req.file est inattendu ou vide.');
         }
-        // --- FIN NOUVEAUX LOGS ---
 
         const { category } = req.body;
 
-        // **Gestion améliorée des erreurs Multer pour cette route aussi**
         if (!file) {
              let errorMessage = 'Aucun fichier n\'a été sélectionné.';
-             if (req.fileFilterError) { // Multer a peut-être défini cette erreur
+             if (req.fileFilterError) {
                  errorMessage = req.fileFilterError.message;
              } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
                  errorMessage = 'Le fichier est trop volumineux ! Max 10MB autorisé.';
@@ -213,15 +206,11 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             return res.redirect(`/classes/${classId}`);
         }
 
-        // Upload vers Cloudinary
         const b64 = Buffer.from(file.buffer).toString('base64');
         let dataURI = 'data:' + file.mimetype + ';base64,' + b64;
 
-        // --- NOUVEAU LOG ---
         console.log('2. Tentative d\'upload vers Cloudinary...');
-        // --- FIN NOUVEAU LOG ---
 
-        // Déterminer le resource_type pour l'upload des fichiers de classe
         let classFileResourceType = 'auto';
         if (file.mimetype.startsWith('image/')) {
             classFileResourceType = 'image';
@@ -230,29 +219,26 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         }
 
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
-            folder: `class_files/${classId}`, // Dossier Cloudinary par classe
-            resource_type: classFileResourceType, // <-- MODIFIÉ ICI
-            // NOUVELLES OPTIONS ESSENTIELLES POUR CONSERVER L'EXTENSION :
-            public_id: file.originalname.replace(/\..+$/, ''), // Nom du fichier sans extension pour l'ID public
-            use_filename: true, // Utiliser le public_id comme nom de fichier dans l'URL
-            unique_filename: true // Ajoute un suffixe unique si nécessaire
+            folder: `class_files/${classId}`,
+            resource_type: classFileResourceType,
+            // MODIFICATIONS ICI POUR LE DÉPÔT DE FICHIERS :
+            public_id: file.originalname, // Utiliser le nom original complet
+            unique_filename: true // Gérer les noms de fichiers dupliqués
         });
 
-        // --- NOUVEAUX LOGS POUR DIAGNOSTIC ---
         console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
             console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
         } else {
             console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
-        // --- FIN NOUVEAUX LOGS ---
 
         const fileUrl = cloudinaryUploadResult.secure_url;
-        const publicId = cloudinaryUploadResult.public_id; // Stocke l'ID public pour une éventuelle suppression future
+        const publicId = cloudinaryUploadResult.public_id;
 
         const newFile = {
-            fileName: file.originalname, // Assurez-vous d'utiliser le nom original ici aussi
-            filePath: fileUrl, // Enregistre l'URL Cloudinary
+            fileName: file.originalname,
+            filePath: fileUrl,
             fileSize: file.size,
             fileMimeType: file.mimetype,
             uploadDate: new Date(),
@@ -261,7 +247,6 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             publicId: publicId
         };
 
-        // Votre log existant
         console.log('4. Objet newFile prêt à être sauvegardé :', newFile);
 
         const classroom = await Classroom.findById(classId);
