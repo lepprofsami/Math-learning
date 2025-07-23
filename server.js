@@ -137,13 +137,12 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
                 {
                     resource_type: cloudinaryResourceType,
                     folder: 'chat_uploads',
-                    // NOUVELLES MODIFICATIONS ICI POUR LE CHAT :
                     use_filename: true, // Utiliser le nom de fichier original comme public_id de base
                     unique_filename: true // Gérer les noms de fichiers dupliqués
                 },
                 (error, result) => {
                     if (error) {
-                        console.error("Cloudinary upload_stream error (chat):", error); // Ajout de log détaillé
+                        console.error("Cloudinary upload_stream error (chat):", error);
                         return reject(error);
                     }
                     resolve(result);
@@ -152,8 +151,21 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
             uploadStream.end(req.file.buffer);
         });
 
-        const publicUrl = result.secure_url;
-        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
+        // NOUVELLE LOGIQUE POUR L'EXTENSION DE FICHIER DANS L'URL
+        let fileUrl = result.secure_url;
+        const originalExtension = path.extname(req.file.originalname).toLowerCase();
+        // S'assurer que l'extension est présente dans l'URL si c'est un fichier raw et qu'elle n'est pas déjà là
+        if (cloudinaryResourceType === 'raw' && originalExtension && !fileUrl.toLowerCase().endsWith(originalExtension)) {
+            // Cloudinary met l'extension dans le 'format' pour les types raw si use_filename est vrai
+            if (result.format && !fileUrl.toLowerCase().endsWith('.' + result.format)) {
+                fileUrl += '.' + result.format;
+            } else if (!result.format) { // Fallback si format n'est pas retourné (peu probable pour raw avec use_filename)
+                fileUrl += originalExtension;
+            }
+        }
+        // FIN NOUVELLE LOGIQUE
+
+        res.json({ success: true, fileUrl: fileUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
     } catch (error) {
         console.error('Erreur lors de l\'upload vers Cloudinary (chat) :', error);
         res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'upload du fichier.' });
@@ -222,7 +234,6 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
             folder: `class_files/${classId}`,
             resource_type: classFileResourceType,
-            // NOUVELLES MODIFICATIONS ICI POUR LE DÉPÔT DE FICHIERS :
             use_filename: true, // Utiliser le nom de fichier original comme public_id de base
             unique_filename: true // Gérer les noms de fichiers dupliqués
         });
@@ -234,12 +245,24 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
 
-        const fileUrl = cloudinaryUploadResult.secure_url;
+        // NOUVELLE LOGIQUE POUR L'EXTENSION DE FICHIER DANS L'URL
+        let fileUrl = cloudinaryUploadResult.secure_url;
+        const originalExtension = path.extname(file.originalname).toLowerCase();
+        // S'assurer que l'extension est présente dans l'URL si c'est un fichier raw et qu'elle n'est pas déjà là
+        if (classFileResourceType === 'raw' && originalExtension && !fileUrl.toLowerCase().endsWith(originalExtension)) {
+            if (cloudinaryUploadResult.format && !fileUrl.toLowerCase().endsWith('.' + cloudinaryUploadResult.format)) {
+                fileUrl += '.' + cloudinaryUploadResult.format;
+            } else if (!cloudinaryUploadResult.format) { // Fallback si format n'est pas retourné
+                fileUrl += originalExtension;
+            }
+        }
+        // FIN NOUVELLE LOGIQUE
+
         const publicId = cloudinaryUploadResult.public_id;
 
         const newFile = {
             fileName: file.originalname,
-            filePath: fileUrl,
+            filePath: fileUrl, // Enregistre l'URL potentiellement modifiée
             fileSize: file.size,
             fileMimeType: file.mimetype,
             uploadDate: new Date(),
@@ -345,7 +368,7 @@ io.on('connection', (socket) => {
                 sender: senderId,
                 content: content,
                 type: type || 'text',
-                fileUrl: fileUrl,
+                fileUrl: fileUrl, // Ceci est l'URL du fichier, potentiellement modifiée pour avoir l'extension
                 timestamp: new Date()
             };
 
