@@ -122,6 +122,7 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     try {
         const fileType = req.file.mimetype;
         let cloudinaryResourceType = 'auto';
+        const folderName = 'chat_uploads';
 
         if (fileType.startsWith('image/')) {
             cloudinaryResourceType = 'image';
@@ -129,35 +130,46 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
             cloudinaryResourceType = 'raw';
         }
 
+        // --- NOUVELLE LOGIQUE : Construction explicite du public_id ---
+        const originalBaseName = path.parse(req.file.originalname).name;
+        const fileExtension = path.extname(req.file.originalname).toLowerCase();
+        // Use a timestamp to ensure uniqueness
+        const uniqueSuffix = Date.now(); 
+
+        // Construct the public_id including the base name, unique suffix, and extension
+        // Example: chat_uploads/my_document_1678888888888.pdf
+        const customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        // -------------------------------------------------------------------
+
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
                     resource_type: cloudinaryResourceType,
-                    folder: 'chat_uploads',
-                    use_filename: true,
-                    unique_filename: true
+                    public_id: customPublicId, // Utilisez le public_id construit
+                    unique_filename: false, // Ne laissez pas Cloudinary ajouter un suffixe, nous le faisons déjà
+                    overwrite: true // Permet de remplacer si un ID est généré deux fois (peu probable avec Date.now())
                 },
                 (error, result) => {
                     if (error) {
                         console.error("Cloudinary upload_stream error (chat):", error);
                         return reject(error);
                     }
-                    console.log("Cloudinary chat upload result (raw):", result); // LOG CRUCIAL
+                    console.log("Cloudinary chat upload result:", result); // LOG CRUCIAL
                     resolve(result);
                 }
             );
             uploadStream.end(req.file.buffer);
         });
 
-        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL ---
+        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL (comme fallback) ---
         let fileUrl = result.secure_url;
-        // Utilisez toujours req.file.originalname qui devrait contenir le nom complet avec extension (ex: "3maths.pdf")
         const originalFullName = req.file.originalname;
         const detectedExtension = path.extname(originalFullName).toLowerCase();
 
-        // Si Cloudinary a uploadé un fichier "raw" et que l'extension n'est pas déjà présente dans l'URL retournée
+        // This condition should now rarely be true if public_id is correctly defined above,
+        // as Cloudinary should return the URL with the full public_id (including extension).
         if (result.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
-            fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
+            fileUrl += detectedExtension; // Add the detected extension directly
         }
         // --- FIN : LOGIQUE DÉFINITIVE ---
 
@@ -220,20 +232,33 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         console.log('2. Tentative d\'upload vers Cloudinary...');
 
         let classFileResourceType = 'auto';
+        const folderName = `class_files/${classId}`;
+
         if (file.mimetype.startsWith('image/')) {
             classFileResourceType = 'image';
         } else if (file.mimetype === 'application/pdf' || file.mimetype.includes('application/msword') || file.mimetype.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
             classFileResourceType = 'raw';
         }
 
+        // --- NOUVELLE LOGIQUE : Construction explicite du public_id ---
+        const originalBaseName = path.parse(file.originalname).name;
+        const fileExtension = path.extname(file.originalname).toLowerCase();
+        // Use a timestamp to ensure uniqueness
+        const uniqueSuffix = Date.now(); 
+
+        // Construct the public_id including the base name, unique suffix, and extension
+        // Example: class_files/classId/my_document_1678888888888.pdf
+        const customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        // -------------------------------------------------------------------
+
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
-            folder: `class_files/${classId}`,
+            public_id: customPublicId, // Utilisez le public_id construit
             resource_type: classFileResourceType,
-            use_filename: true,
-            unique_filename: true
+            unique_filename: false, // Ne laissez pas Cloudinary ajouter un suffixe
+            overwrite: true // Permet de remplacer si un ID est généré deux fois (peu probable)
         });
 
-        console.log("Cloudinary class file upload result (raw):", cloudinaryUploadResult); // LOG CRUCIAL
+        console.log("Cloudinary class file upload result:", cloudinaryUploadResult); // LOG CRUCIAL
 
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
             console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
@@ -241,23 +266,22 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
 
-        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL ---
+        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL (comme fallback) ---
         let fileUrl = cloudinaryUploadResult.secure_url;
-        // Utilisez toujours file.originalname qui devrait contenir le nom complet avec extension
         const originalFullName = file.originalname;
         const detectedExtension = path.extname(originalFullName).toLowerCase();
 
-        // Si Cloudinary a uploadé un fichier "raw" et que l'extension n'est pas déjà présente dans l'URL retournée
+        // This condition should now rarely be true if public_id is correctly defined above.
         if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
-            fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
+            fileUrl += detectedExtension; // Add the detected extension directly
         }
         // --- FIN : LOGIQUE DÉFINITIVE ---
 
-        const publicId = cloudinaryUploadResult.public_id;
+        const publicId = cloudinaryUploadResult.public_id; // publicId will now include the full path and extension
 
         const newFile = {
             fileName: file.originalname,
-            filePath: fileUrl, // Enregistre l'URL potentiellement modifiée
+            filePath: fileUrl, // Save the potentially modified URL
             fileSize: file.size,
             fileMimeType: file.mimetype,
             uploadDate: new Date(),
@@ -363,7 +387,7 @@ io.on('connection', (socket) => {
                 sender: senderId,
                 content: content,
                 type: type || 'text',
-                fileUrl: fileUrl, // Ceci est l'URL du fichier, potentiellement modifiée pour avoir l'extension
+                fileUrl: fileUrl, // This is the file URL, potentially modified to have the extension
                 timestamp: new Date()
             };
 
