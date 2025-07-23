@@ -178,11 +178,7 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     next();
 });
 
----
-
-### **ROUTE : Dépôt de Fichiers (hors chat) pour les classes**
-
-```javascript
+// --- ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
 app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
     try {
         const classId = req.params.classId;
@@ -290,11 +286,7 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
     }
 });
 
----
-
-### **Routes Générales et Socket.IO**
-
-```javascript
+// --- Routes Générales et Socket.IO ---
 // Route principale (accueil)
 app.get('/', (req, res) => {
     res.render('index', { title: 'Accueil - Math-learning' });
