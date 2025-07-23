@@ -18,33 +18,20 @@ router.post('/register', async (req, res) => {
         console.log('Tentative d\'inscription pour:', username, 'Rôle:', role);
         console.log('Mot de passe reçu du formulaire (présence):', password ? 'Oui' : 'Non');
 
+        // Basic validation for username and password presence
+        if (!username || !password) {
+            console.log('Échec inscription: Nom d\'utilisateur ou mot de passe manquant.');
+            return res.render('register', { error: 'Nom d\'utilisateur et mot de passe sont requis.' });
+        }
+
+        // Check if username already exists
         let user = await User.findOne({ username });
         if (user) {
             console.log('Échec inscription: Nom d\'utilisateur déjà pris:', username);
             return res.render('register', { error: 'Ce nom d\'utilisateur est déjà pris.' });
         }
 
-        // =========================================================================
-        // --- LOGIQUE MISE À JOUR : Autoriser la création du premier professeur si la DB est vide ---
-        if (role === 'teacher') {
-            const existingTeachersCount = await User.countDocuments({ role: 'teacher' });
-            if (existingTeachersCount === 0) {
-                // Si c'est le tout premier professeur, on l'autorise
-                console.log('Autorisation de la création du PREMIER compte professeur.');
-            } else {
-                // Si des professeurs existent déjà, appliquez la restriction OU une logique différente
-                // Pour l'instant, on bloque la création de nouveaux professeurs via le formulaire
-                // après le premier compte créé, sauf si c'est le compte par défaut (si vous voulez le gérer).
-                // Vous pouvez supprimer cette condition si vous voulez que n'importe quel professeur puisse s'inscrire
-                // via ce formulaire même s'il y en a déjà.
-                if (username !== 'teacher' || password !== '123456') { // C'est votre ancienne logique de restriction
-                   console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé via le formulaire.');
-                   return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
-                }
-            }
-        }
-        // =========================================================================
-
+        // --- Logic for Students ---
         let classroom = null;
         if (role === 'student') {
             if (!classroomCode) {
@@ -57,10 +44,23 @@ router.post('/register', async (req, res) => {
                 return res.render('register', { error: 'Code de classe invalide.' });
             }
             console.log('Classe trouvée pour l\'élève:', classroom.name, '(', classroom.classCode, ')');
+        } else if (role === 'teacher') {
+            // No specific classroom code needed for teachers.
+            // If you want to ensure no 'classroomCode' is sent for teachers,
+            // you could add a check: if (classroomCode) { /* error */ }
+            // But usually, the client-side JS handles hiding this field.
+            console.log('Rôle Professeur sélectionné. Pas de code de classe requis.');
+        } else {
+            // Handle cases where no role or an invalid role is selected
+            console.log('Échec inscription: Rôle invalide ou manquant.');
+            return res.render('register', { error: 'Veuillez sélectionner un rôle valide (Professeur ou Élève).' });
         }
 
+
+        // Hash the password
         const hashedPassword = await bcrypt.hash(password, 10);
 
+        // Create the new user
         user = new User({
             username,
             password: hashedPassword,
@@ -72,15 +72,17 @@ router.post('/register', async (req, res) => {
         console.log('Utilisateur enregistré en DB avec succès:', user.username, 'ID:', user._id);
         console.log('Mot de passe sauvegardé en DB (vérification hachage):', user.password ? 'Haché présent' : 'Haché absent');
 
-
+        // If it's a student, add them to the classroom's student list
         if (classroom) {
             classroom.students.push(user._id);
             await classroom.save();
             console.log('Élève', user.username, 'ajouté à la classe', classroom.name);
         }
 
+        // Populate the user object for session
         const populatedUser = await User.findById(user._id).populate('classroom');
 
+        // Set session data
         req.session.user = {
             _id: populatedUser._id,
             username: populatedUser.username,
@@ -97,6 +99,7 @@ router.post('/register', async (req, res) => {
         console.log('Session classroom:', req.session.user.classroom);
         console.log('Session classroomName:', req.session.user.classroomName);
 
+        // Save session and redirect
         req.session.save((err) => {
             if (err) {
                 console.error('Error saving session after registration:', err);
@@ -138,6 +141,8 @@ router.post('/login', async (req, res) => {
         }
         console.log('Utilisateur trouvé en DB:', user.username, 'Rôle:', user.role);
 
+        // Assurez-vous que `comparePassword` est défini dans votre modèle User.
+        // C'est une méthode que vous devriez ajouter à votre schéma User pour comparer le mot de passe haché.
         const isMatch = await user.comparePassword(password);
 
         if (!isMatch) {
@@ -157,7 +162,7 @@ router.post('/login', async (req, res) => {
         } else {
             req.session.user.classroom = null;
             req.session.user.classroomName = null;
-        }
+        };
         console.log('Connexion réussie! Session établie pour:', user.username);
         console.log('Session classroom (ID):', req.session.user.classroom);
         console.log('Session classroomName:', req.session.user.classroomName);
