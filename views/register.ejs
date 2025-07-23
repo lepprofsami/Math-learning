@@ -6,7 +6,7 @@
     <title>Inscription - Math-learning</title>
     <link rel="stylesheet" href="/css/style.css">
     <style>
-        /* Styles pour les messages d'information */
+        /* Styles pour les messages d'information (si vous en avez d'autres) */
         .info-message {
             background-color: #e0f7fa; /* Bleu clair */
             border: 1px solid #00bcd4; /* Bordure plus foncée */
@@ -23,7 +23,7 @@
             font-family: monospace;
         }
     </style>
-<link rel="manifest" href="/manifest.json">
+    <link rel="manifest" href="/manifest.json">
     <link rel="apple-touch-icon" href="/images/icons/icon-192x192.png">
 
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -54,14 +54,7 @@
                 <p class="success-message"><%= message %></p>
             <% } %>
 
-            <div id="teacherInfoMessage" class="info-message" style="display: none;">
-                <p><strong>Information Importante :</strong> Pour des raisons commerciales, la création de nouveaux comptes professeur est limitée.</p>
-                <p>Veuillez utiliser le compte prédéfini :<br>
-                Nom d'utilisateur : <code>teacher</code><br>
-                Mot de passe : <code>123456</code></p>
-                <p>Ces champs seront automatiquement remplis et désactivés lorsque "Professeur" est sélectionné.</p>
-            </div>
-            <form action="/register" method="POST">
+            <form action="/auth/register" method="POST">
                 <label for="username">Nom d'utilisateur:</label>
                 <input type="text" id="username" name="username" required>
 
@@ -89,70 +82,49 @@
 
     <script>
         const roleSelect = document.getElementById('role');
-        const usernameInput = document.getElementById('username');
-        const passwordInput = document.getElementById('password');
+        const usernameInput = document.getElementById('username'); // Ajouté
+        const passwordInput = document.getElementById('password'); // Ajouté
         const classroomCodeLabel = document.getElementById('classroomCodeLabel');
         const classroomCodeInput = document.getElementById('classroomCode');
-        const teacherInfoMessage = document.getElementById('teacherInfoMessage'); // Référence au nouveau message
+        // REMARQUE : teacherInfoMessage N'EST PLUS NÉCESSAIRE car le div a été supprimé
 
         function handleRoleChange() {
             if (roleSelect.value === 'student') {
                 // Pour les élèves : afficher le champ de code de classe
                 classroomCodeLabel.style.display = 'block';
                 classroomCodeInput.style.display = 'block';
-                classroomCodeInput.setAttribute('required', 'required');
+                classroomCodeInput.setAttribute('required', 'required'); // Le code de classe est requis pour les élèves
 
-                // Réactiver et vider les champs username/password
-                usernameInput.value = '';
-                usernameInput.disabled = false;
-                usernameInput.readOnly = false; // Important pour les navigateurs
-                passwordInput.value = '';
-                passwordInput.disabled = false;
-                passwordInput.readOnly = false; // Important pour les navigateurs
+                // S'assurer que les champs username/password sont VIDES, ACTIVÉS et ÉDITABLES
+                usernameInput.value = ''; // Vider le champ
+                usernameInput.disabled = false; // TRÈS IMPORTANT : ne pas désactiver
+                usernameInput.readOnly = false; // Permettre l'édition
+                passwordInput.value = ''; // Vider le champ
+                passwordInput.disabled = false; // TRÈS IMPORTANT : ne pas désactiver
+                passwordInput.readOnly = false; // Permettre l'édition
 
-                // Cacher le message d'info professeur
-                teacherInfoMessage.style.display = 'none';
-
-            } else if (roleSelect.value === 'teacher') {
-                // Pour les professeurs : masquer le champ de code de classe
+            } else { // Si l'utilisateur est un professeur ou n'a pas sélectionné de rôle
+                // Masquer le champ de code de classe
                 classroomCodeLabel.style.display = 'none';
                 classroomCodeInput.style.display = 'none';
-                classroomCodeInput.removeAttribute('required');
-                classroomCodeInput.value = ''; // Vider la valeur
+                classroomCodeInput.removeAttribute('required'); // Le code de classe n'est pas requis
+                classroomCodeInput.value = ''; // Vider le champ pour éviter d'envoyer une valeur incorrecte
 
-                // Pré-remplir et désactiver les champs username/password
-                usernameInput.value = 'teacher';
-                usernameInput.disabled = true;
-                usernameInput.readOnly = true; // Empêche l'édition
-                passwordInput.value = '123456';
-                passwordInput.disabled = true;
-                passwordInput.readOnly = true; // Empêche l'édition
-
-                // Afficher le message d'info professeur
-                teacherInfoMessage.style.display = 'block';
-
-            } else {
-                // Quand "Sélectionnez un rôle" est choisi
-                classroomCodeLabel.style.display = 'none';
-                classroomCodeInput.style.display = 'none';
-                classroomCodeInput.removeAttribute('required');
-                classroomCodeInput.value = '';
-
-                usernameInput.value = '';
-                usernameInput.disabled = false;
-                usernameInput.readOnly = false;
-                passwordInput.value = '';
-                passwordInput.disabled = false;
-                passwordInput.readOnly = false;
-
-                teacherInfoMessage.style.display = 'none';
+                // S'assurer que les champs username/password sont VIDES, ACTIVÉS et ÉDITABLES
+                // Cela couvre à la fois le cas "teacher" et le cas "aucune sélection"
+                usernameInput.value = ''; // Vider le champ
+                usernameInput.disabled = false; // TRÈS IMPORTANT : ne pas désactiver
+                usernameInput.readOnly = false; // Permettre l'édition
+                passwordInput.value = ''; // Vider le champ
+                passwordInput.disabled = false; // TRÈS IMPORTANT : ne pas désactiver
+                passwordInput.readOnly = false; // Permettre l'édition
             }
         }
 
         // Exécuter la fonction une fois au chargement initial de la page
         handleRoleChange();
 
-        // Attacher l'écouteur d'événement au changement de sélection
+        // Attacher l'écouteur d'événement au changement de sélection du rôle
         roleSelect.addEventListener('change', handleRoleChange);
     </script>
 </body>
