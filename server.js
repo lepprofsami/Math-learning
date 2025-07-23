@@ -8,7 +8,6 @@ const path = require('path');
 const socketIo = require('socket.io');
 require('dotenv').config();
 
-// --- NOUVEL IMPORT CLOUDINARY ---
 const cloudinary = require('cloudinary').v2;
 
 const app = express();
@@ -16,7 +15,6 @@ const server = http.createServer(app);
 const io = socketIo(server);
 
 // --- Configuration Cloudinary ---
-// Ces informations sont lues depuis les variables d'environnement
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -88,11 +86,10 @@ const upload = multer({
 // --------------------------------------------------------------------------
 
 // --- Import des modèles et routes ---
-const Classroom = require('./models/Classroom'); // Assurez-vous que le modèle Classroom est bien importé
-
+const Classroom = require('./models/Classroom');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
-const classRoutes = require('./routes/classRoutes'); // Assurez-vous que cette route existe et gère vos vues de classe
+const classRoutes = require('./routes/classRoutes');
 
 // --- Middleware pour vérifier l'authentification ---
 function isLoggedIn(req, res, next) {
@@ -106,7 +103,7 @@ function isLoggedIn(req, res, next) {
 // --- Routes Générales ---
 app.use('/', authRoutes);
 app.use('/', dashboardRoutes);
-app.use('/classes', classRoutes); // Assurez-vous que les routes définies dans classRoutes ne rentrent pas en conflit
+app.use('/classes', classRoutes);
 
 // --- API Route pour l'upload de fichiers dans le CHAT vers Cloudinary ---
 app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
@@ -137,35 +134,32 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
                 {
                     resource_type: cloudinaryResourceType,
                     folder: 'chat_uploads',
-                    use_filename: true, // Utiliser le nom de fichier original comme public_id de base
-                    unique_filename: true // Gérer les noms de fichiers dupliqués
+                    use_filename: true,
+                    unique_filename: true
                 },
                 (error, result) => {
                     if (error) {
                         console.error("Cloudinary upload_stream error (chat):", error);
                         return reject(error);
                     }
-                    // >>> LOG CRUCIAL POUR LE DÉBOGAGE DU CHAT <<<
-                    console.log("Cloudinary chat upload result (raw):", result);
+                    console.log("Cloudinary chat upload result (raw):", result); // LOG CRUCIAL
                     resolve(result);
                 }
             );
             uploadStream.end(req.file.buffer);
         });
 
-        // NOUVELLE LOGIQUE POUR L'EXTENSION DE FICHIER DANS L'URL
+        // --- DÉBUT : LOGIQUE MISE À JOUR POUR L'EXTENSION DE FICHIER DANS L'URL ---
         let fileUrl = result.secure_url;
-        const originalExtension = path.extname(req.file.originalname).toLowerCase();
-        // S'assurer que l'extension est présente dans l'URL si c'est un fichier raw et qu'elle n'est pas déjà là
-        if (cloudinaryResourceType === 'raw' && originalExtension && !fileUrl.toLowerCase().endsWith(originalExtension)) {
-            // Cloudinary met l'extension dans le 'format' pour les types raw si use_filename est vrai
-            if (result.format && !fileUrl.toLowerCase().endsWith('.' + result.format)) {
-                fileUrl += '.' + result.format;
-            } else if (!result.format) { // Fallback si format n'est pas retourné (peu probable pour raw avec use_filename)
-                fileUrl += originalExtension;
-            }
+        // Utilisez toujours req.file.originalname qui devrait contenir le nom complet avec extension (ex: "3maths.pdf")
+        const originalFullName = req.file.originalname;
+        const detectedExtension = path.extname(originalFullName).toLowerCase();
+
+        // Si Cloudinary a uploadé un fichier "raw" et que l'extension n'est pas déjà présente dans l'URL retournée
+        if (result.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
+            fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
         }
-        // FIN NOUVELLE LOGIQUE
+        // --- FIN : LOGIQUE MISE À JOUR ---
 
         res.json({ success: true, fileUrl: fileUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
     } catch (error) {
@@ -184,8 +178,11 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     next();
 });
 
+---
 
-// --- ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
+### **ROUTE : Dépôt de Fichiers (hors chat) pour les classes**
+
+```javascript
 app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
     try {
         const classId = req.params.classId;
@@ -236,12 +233,11 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
             folder: `class_files/${classId}`,
             resource_type: classFileResourceType,
-            use_filename: true, // Utiliser le nom de fichier original comme public_id de base
-            unique_filename: true // Gérer les noms de fichiers dupliqués
+            use_filename: true,
+            unique_filename: true
         });
 
-        // >>> LOG CRUCIAL POUR LE DÉBOGAGE DU DÉPÔT DE FICHIERS <<<
-        console.log("Cloudinary class file upload result (raw):", cloudinaryUploadResult);
+        console.log("Cloudinary class file upload result (raw):", cloudinaryUploadResult); // LOG CRUCIAL
 
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
             console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
@@ -249,18 +245,17 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
 
-        // NOUVELLE LOGIQUE POUR L'EXTENSION DE FICHIER DANS L'URL
+        // --- DÉBUT : LOGIQUE MISE À JOUR POUR L'EXTENSION DE FICHIER DANS L'URL ---
         let fileUrl = cloudinaryUploadResult.secure_url;
-        const originalExtension = path.extname(file.originalname).toLowerCase();
-        // S'assurer que l'extension est présente dans l'URL si c'est un fichier raw et qu'elle n'est pas déjà là
-        if (classFileResourceType === 'raw' && originalExtension && !fileUrl.toLowerCase().endsWith(originalExtension)) {
-            if (cloudinaryUploadResult.format && !fileUrl.toLowerCase().endsWith('.' + cloudinaryUploadResult.format)) {
-                fileUrl += '.' + cloudinaryUploadResult.format;
-            } else if (!cloudinaryUploadResult.format) { // Fallback si format n'est pas retourné
-                fileUrl += originalExtension;
-            }
+        // Utilisez toujours file.originalname qui devrait contenir le nom complet avec extension
+        const originalFullName = file.originalname;
+        const detectedExtension = path.extname(originalFullName).toLowerCase();
+
+        // Si Cloudinary a uploadé un fichier "raw" et que l'extension n'est pas déjà présente dans l'URL retournée
+        if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
+            fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
         }
-        // FIN NOUVELLE LOGIQUE
+        // --- FIN : LOGIQUE MISE À JOUR ---
 
         const publicId = cloudinaryUploadResult.public_id;
 
@@ -295,7 +290,11 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
     }
 });
 
+---
 
+### **Routes Générales et Socket.IO**
+
+```javascript
 // Route principale (accueil)
 app.get('/', (req, res) => {
     res.render('index', { title: 'Accueil - Math-learning' });
@@ -356,8 +355,6 @@ io.on('connection', (socket) => {
 
         if (!senderId || !senderUsername) {
             console.error('Erreur: ID ou NOM D\'UTILISATEUR de l\'expéditeur manquant sur le socket.');
-            return;
-         pericolore('Erreur: ID ou NOM D\'UTILISATEUR de l\'expéditeur manquant sur le socket.');
             return;
         }
 
