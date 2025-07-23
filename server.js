@@ -137,12 +137,13 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
                 {
                     resource_type: cloudinaryResourceType,
                     folder: 'chat_uploads',
-                    // MODIFICATIONS ICI POUR LE CHAT :
-                    public_id: req.file.originalname, // Utiliser le nom original complet
+                    // NOUVELLES MODIFICATIONS ICI POUR LE CHAT :
+                    use_filename: true, // Utiliser le nom de fichier original comme public_id de base
                     unique_filename: true // Gérer les noms de fichiers dupliqués
                 },
                 (error, result) => {
                     if (error) {
+                        console.error("Cloudinary upload_stream error (chat):", error); // Ajout de log détaillé
                         return reject(error);
                     }
                     resolve(result);
@@ -221,8 +222,8 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
             folder: `class_files/${classId}`,
             resource_type: classFileResourceType,
-            // MODIFICATIONS ICI POUR LE DÉPÔT DE FICHIERS :
-            public_id: file.originalname, // Utiliser le nom original complet
+            // NOUVELLES MODIFICATIONS ICI POUR LE DÉPÔT DE FICHIERS :
+            use_filename: true, // Utiliser le nom de fichier original comme public_id de base
             unique_filename: true // Gérer les noms de fichiers dupliqués
         });
 
