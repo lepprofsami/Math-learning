@@ -24,22 +24,7 @@ router.post('/register', async (req, res) => {
             return res.render('register', { error: 'Ce nom d\'utilisateur est déjà pris.' });
         }
 
-        // =========================================================================
-        // --- NOUVELLE LOGIQUE : Restriction pour le rôle 'teacher' ---
-        if (role === 'teacher') {
-            // Empêcher la création de tout autre utilisateur 'teacher' que le compte par défaut
-            if (username !== 'teacher' || password !== '123456') {
-                console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé.');
-                return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
-            }
-            // Si c'est "teacher" et "123456", on peut continuer (ceci sera géré par la création automatique au démarrage)
-            // En fait, idéalement, on devrait empêcher toute inscription "teacher" via le formulaire
-            // si l'on ne veut qu'UN SEUL compte. L'option de création au démarrage est plus simple.
-            // Si vous voulez tout de même autoriser "teacher/123456" via le formulaire,
-            // alors cette partie de code est correcte.
-            // Pour l'exemple, nous allons le laisser et compter sur la création au démarrage.
-        }
-        // =========================================================================
+    
 
         let classroom = null;
         if (role === 'student') {
