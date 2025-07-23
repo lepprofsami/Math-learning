@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs'); // Assurez-vous que bcryptjs est bien installé et utilisé pour le hachage
 const Classroom = require('../models/Classroom');
 
 // --- Route pour afficher le formulaire d'inscription (GET) ---
@@ -18,20 +18,29 @@ router.post('/register', async (req, res) => {
         console.log('Tentative d\'inscription pour:', username, 'Rôle:', role);
         console.log('Mot de passe reçu du formulaire (présence):', password ? 'Oui' : 'Non');
 
-        // Basic validation for username and password presence
-        if (!username || !password) {
-            console.log('Échec inscription: Nom d\'utilisateur ou mot de passe manquant.');
-            return res.render('register', { error: 'Nom d\'utilisateur et mot de passe sont requis.' });
-        }
-
-        // Check if username already exists
         let user = await User.findOne({ username });
         if (user) {
             console.log('Échec inscription: Nom d\'utilisateur déjà pris:', username);
             return res.render('register', { error: 'Ce nom d\'utilisateur est déjà pris.' });
         }
 
-        // --- Logic for Students ---
+        // =========================================================================
+        // --- NOUVELLE LOGIQUE : Restriction pour le rôle 'teacher' ---
+        if (role === 'teacher') {
+            // Empêcher la création de tout autre utilisateur 'teacher' que le compte par défaut
+            if (username !== 'teacher' || password !== '123456') {
+                console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé.');
+                return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
+            }
+            // Si c'est "teacher" et "123456", on peut continuer (ceci sera géré par la création automatique au démarrage)
+            // En fait, idéalement, on devrait empêcher toute inscription "teacher" via le formulaire
+            // si l'on ne veut qu'UN SEUL compte. L'option de création au démarrage est plus simple.
+            // Si vous voulez tout de même autoriser "teacher/123456" via le formulaire,
+            // alors cette partie de code est correcte.
+            // Pour l'exemple, nous allons le laisser et compter sur la création au démarrage.
+        }
+        // =========================================================================
+
         let classroom = null;
         if (role === 'student') {
             if (!classroomCode) {
@@ -44,26 +53,16 @@ router.post('/register', async (req, res) => {
                 return res.render('register', { error: 'Code de classe invalide.' });
             }
             console.log('Classe trouvée pour l\'élève:', classroom.name, '(', classroom.classCode, ')');
-        } else if (role === 'teacher') {
-            // No specific classroom code needed for teachers.
-            // If you want to ensure no 'classroomCode' is sent for teachers,
-            // you could add a check: if (classroomCode) { /* error */ }
-            // But usually, the client-side JS handles hiding this field.
-            console.log('Rôle Professeur sélectionné. Pas de code de classe requis.');
-        } else {
-            // Handle cases where no role or an invalid role is selected
-            console.log('Échec inscription: Rôle invalide ou manquant.');
-            return res.render('register', { error: 'Veuillez sélectionner un rôle valide (Professeur ou Élève).' });
         }
 
+        // IMPORTANT : Si votre modèle User a un hook 'pre-save' pour hacher le mot de passe,
+        // vous n'avez pas besoin de bcrypt.hash(password, 10) ici.
+        // Si vous n'avez PAS de hook, décommentez la ligne ci-dessous et utilisez 'hashedPassword'.
+        const hashedPassword = await bcrypt.hash(password, 10); // Hachez le mot de passe ici si non fait par le modèle
 
-        // Hash the password
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        // Create the new user
         user = new User({
             username,
-            password: hashedPassword,
+            password: hashedPassword, // Utilisez le mot de passe haché
             role,
             classroom: classroom ? classroom._id : null
         });
@@ -72,17 +71,15 @@ router.post('/register', async (req, res) => {
         console.log('Utilisateur enregistré en DB avec succès:', user.username, 'ID:', user._id);
         console.log('Mot de passe sauvegardé en DB (vérification hachage):', user.password ? 'Haché présent' : 'Haché absent');
 
-        // If it's a student, add them to the classroom's student list
+
         if (classroom) {
             classroom.students.push(user._id);
             await classroom.save();
             console.log('Élève', user.username, 'ajouté à la classe', classroom.name);
         }
 
-        // Populate the user object for session
         const populatedUser = await User.findById(user._id).populate('classroom');
 
-        // Set session data
         req.session.user = {
             _id: populatedUser._id,
             username: populatedUser.username,
@@ -99,7 +96,6 @@ router.post('/register', async (req, res) => {
         console.log('Session classroom:', req.session.user.classroom);
         console.log('Session classroomName:', req.session.user.classroomName);
 
-        // Save session and redirect
         req.session.save((err) => {
             if (err) {
                 console.error('Error saving session after registration:', err);
@@ -162,7 +158,7 @@ router.post('/login', async (req, res) => {
         } else {
             req.session.user.classroom = null;
             req.session.user.classroomName = null;
-        };
+        }
         console.log('Connexion réussie! Session établie pour:', user.username);
         console.log('Session classroom (ID):', req.session.user.classroom);
         console.log('Session classroomName:', req.session.user.classroomName);
