@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const User = require('../models/user');
-const bcrypt = require('bcryptjs'); // Assurez-vous que bcryptjs est bien installé et utilisé pour le hachage
+const bcrypt = require('bcryptjs');
 const Classroom = require('../models/Classroom');
 
 // --- Route pour afficher le formulaire d'inscription (GET) ---
@@ -25,19 +25,23 @@ router.post('/register', async (req, res) => {
         }
 
         // =========================================================================
-        // --- NOUVELLE LOGIQUE : Restriction pour le rôle 'teacher' ---
+        // --- LOGIQUE MISE À JOUR : Autoriser la création du premier professeur si la DB est vide ---
         if (role === 'teacher') {
-            // Empêcher la création de tout autre utilisateur 'teacher' que le compte par défaut
-            if (username !== 'teacher' || password !== '123456') {
-                console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé.');
-                return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
+            const existingTeachersCount = await User.countDocuments({ role: 'teacher' });
+            if (existingTeachersCount === 0) {
+                // Si c'est le tout premier professeur, on l'autorise
+                console.log('Autorisation de la création du PREMIER compte professeur.');
+            } else {
+                // Si des professeurs existent déjà, appliquez la restriction OU une logique différente
+                // Pour l'instant, on bloque la création de nouveaux professeurs via le formulaire
+                // après le premier compte créé, sauf si c'est le compte par défaut (si vous voulez le gérer).
+                // Vous pouvez supprimer cette condition si vous voulez que n'importe quel professeur puisse s'inscrire
+                // via ce formulaire même s'il y en a déjà.
+                if (username !== 'teacher' || password !== '123456') { // C'est votre ancienne logique de restriction
+                   console.log('Échec inscription (professeur): Tentative de création d\'un compte professeur non autorisé via le formulaire.');
+                   return res.render('register', { error: 'La création de nouveaux comptes professeur est limitée à des fins commerciales. Veuillez utiliser les identifiants de démonstration.' });
+                }
             }
-            // Si c'est "teacher" et "123456", on peut continuer (ceci sera géré par la création automatique au démarrage)
-            // En fait, idéalement, on devrait empêcher toute inscription "teacher" via le formulaire
-            // si l'on ne veut qu'UN SEUL compte. L'option de création au démarrage est plus simple.
-            // Si vous voulez tout de même autoriser "teacher/123456" via le formulaire,
-            // alors cette partie de code est correcte.
-            // Pour l'exemple, nous allons le laisser et compter sur la création au démarrage.
         }
         // =========================================================================
 
@@ -55,14 +59,11 @@ router.post('/register', async (req, res) => {
             console.log('Classe trouvée pour l\'élève:', classroom.name, '(', classroom.classCode, ')');
         }
 
-        // IMPORTANT : Si votre modèle User a un hook 'pre-save' pour hacher le mot de passe,
-        // vous n'avez pas besoin de bcrypt.hash(password, 10) ici.
-        // Si vous n'avez PAS de hook, décommentez la ligne ci-dessous et utilisez 'hashedPassword'.
-        const hashedPassword = await bcrypt.hash(password, 10); // Hachez le mot de passe ici si non fait par le modèle
+        const hashedPassword = await bcrypt.hash(password, 10);
 
         user = new User({
             username,
-            password: hashedPassword, // Utilisez le mot de passe haché
+            password: hashedPassword,
             role,
             classroom: classroom ? classroom._id : null
         });
@@ -137,8 +138,6 @@ router.post('/login', async (req, res) => {
         }
         console.log('Utilisateur trouvé en DB:', user.username, 'Rôle:', user.role);
 
-        // Assurez-vous que `comparePassword` est défini dans votre modèle User.
-        // C'est une méthode que vous devriez ajouter à votre schéma User pour comparer le mot de passe haché.
         const isMatch = await user.comparePassword(password);
 
         if (!isMatch) {
