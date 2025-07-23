@@ -4,18 +4,17 @@ const Classroom = require('../models/Classroom'); // Assurez-vous que ce chemin 
 const User = require('../models/user'); // Assurez-vous que ce chemin est correct
 
 const isAuthenticated = require('../middleware/isAuthenticated');
-const isClassMember = require('../middleware/isClassMember'); // Utilisé pour les routes :id
+const isClassMember = require('../middleware/isClassMember');
 
 // NOUVEAUX IMPORTS POUR L'UPLOAD CLOUDINARY
 const multer = require('multer');
-const cloudinary = require('cloudinary').v2; // Assurez-vous que Cloudinary est bien configuré globalement dans server.js
-const path = require('path'); // Nécessaire pour path.extname dans fileFilter
+const cloudinary = require('cloudinary').v2;
+const path = require('path');
 
 // --- Multer Configuration pour l'upload de fichiers de classe vers Cloudinary ---
-// Cette instance de Multer est spécifique aux fichiers de classe, utilisant memoryStorage.
 const classFileUpload = multer({
-    storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire
-    limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB
     fileFilter: (req, file, cb) => {
         const allowedMimeTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
         const mimetype = allowedMimeTypes.test(file.mimetype);
@@ -30,27 +29,22 @@ const classFileUpload = multer({
 // --------------------------------------------------------------------------
 
 // --- NOUVELLE ROUTE : POST / (pour créer une nouvelle classe) ---
-// Cette route sera accessible via POST /classes grâce à app.use('/classes', classRoutes) dans server.js
 router.post('/', isAuthenticated, async (req, res) => {
     try {
-        // Vérification du rôle du professeur directement dans la route
         if (!req.session.user || req.session.user.role !== 'teacher') {
             console.warn(`Tentative de création de classe non autorisée par: ${req.session.user ? req.session.user.username : 'Utilisateur non connecté'}`);
             return res.status(403).redirect('/teacher/dashboard?error=' + encodeURIComponent('Accès interdit. Seuls les professeurs peuvent créer des classes.'));
         }
 
-        const { name, classCode } = req.body; // Récupère les données du formulaire de création de classe
-        const teacherId = req.session.user._id; // L'ID du professeur connecté
+        const { name, classCode } = req.body;
+        const teacherId = req.session.user._id;
 
-        // Log pour le débogage
         console.log('--- Tentative de Création de Classe ---');
         console.log(`Nom: ${name}, Code: ${classCode}, Professeur ID: ${teacherId}`);
 
-        // Vérifiez si le code de classe existe déjà
         const existingClass = await Classroom.findOne({ classCode });
         if (existingClass) {
             console.warn(`Échec création classe: Code de classe '${classCode}' déjà utilisé.`);
-            // Rediriger vers le tableau de bord du professeur avec un message d'erreur
             return res.redirect('/teacher/dashboard?error=' + encodeURIComponent('Un cours avec ce code existe déjà. Veuillez en choisir un autre.'));
         }
 
@@ -61,20 +55,14 @@ router.post('/', isAuthenticated, async (req, res) => {
             students: [],
             messages: [],
             files: [],
-            // Assurez-vous d'ajouter ces champs si votre modèle Classroom les a
-            // assignments: [],
-            // announcements: []
         });
 
         await newClassroom.save();
         console.log(`Classe '${newClassroom.name}' créée avec succès. ID: ${newClassroom._id}`);
 
-        // Optionnel: Ajouter la classe à la liste des classes du professeur dans son document User
-        // Assurez-vous que votre modèle User a un champ 'classes: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Classroom' }]'
         await User.findByIdAndUpdate(teacherId, { $push: { classes: newClassroom._id } });
         console.log(`Classe ajoutée au profil du professeur: ${req.session.user.username}`);
 
-        // Rediriger vers le tableau de bord du professeur avec un message de succès
         res.redirect('/teacher/dashboard?message=' + encodeURIComponent('Cours créé avec succès !'));
 
     } catch (error) {
@@ -94,20 +82,20 @@ router.post('/', isAuthenticated, async (req, res) => {
 router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
     try {
         const classroom = await Classroom.findById(req.params.id)
-            .populate('teacher', 'username') // Populer le professeur avec son username
+            .populate('teacher', 'username')
             .populate({
                 path: 'messages',
                 populate: {
                     path: 'sender',
-                    select: 'username' // Populer l'expéditeur de chaque message avec son username
+                    select: 'username'
                 }
             })
-            .populate('students', 'username') // Populer les étudiants avec leur username
+            .populate('students', 'username')
             .populate({
                 path: 'files',
                 populate: {
                     path: 'uploader',
-                    select: 'username' // Populer l'uploader de chaque fichier avec son username
+                    select: 'username'
                 }
             });
 
@@ -116,9 +104,8 @@ router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
             return res.status(404).render('error', { message: 'Classe introuvable.' });
         }
 
-        // --- DEBUGGING: LOG THE CLASSROOM OBJECT BEFORE RENDERING ---
         console.log('--- Classroom Object Sent to EJS ---');
-        console.log(JSON.stringify(classroom, null, 2)); // Use stringify for better logging of Mongoose objects
+        console.log(JSON.stringify(classroom, null, 2));
         console.log(`Number of messages: ${classroom.messages ? classroom.messages.length : 0}`);
         console.log(`Number of files: ${classroom.files ? classroom.files.length : 0}`);
         if (classroom.messages && classroom.messages.length > 0) {
@@ -128,7 +115,6 @@ router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
             console.log(`  Timestamp: ${classroom.messages[0].timestamp}`);
         }
         console.log('------------------------------------');
-        // --- END DEBUGGING LOGS ---
 
         res.render('class_details', { classroom, user: req.session.user });
 
@@ -139,8 +125,6 @@ router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
 });
 
 // Create a new message in the classroom chat
-// Note: This route is likely bypassed by Socket.IO for real-time chat.
-// Keep it only if you have a non-Socket.IO message submission form elsewhere.
 router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) => {
     try {
         const { content } = req.body;
@@ -150,30 +134,23 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
             return res.status(404).json({ message: 'Classe introuvable.' });
         }
 
-        // IMPORTANT: If you are using Socket.IO for chat, this route is likely redundant.
-        // The Socket.IO handler in server.js should be responsible for saving messages.
-        // This is a fallback or for non-realtime message submission.
         const newMessage = {
-            sender: req.session.user._id, // User ID from session
+            sender: req.session.user._id,
             content: content,
-            type: 'text', // Assuming this route only handles text messages
+            type: 'text',
             timestamp: new Date()
         };
 
         classroom.messages.push(newMessage);
         await classroom.save();
 
-        // After saving, get the populated message to emit via socket.io
-        // Find the newly added message and populate its sender
         const savedMessage = classroom.messages[classroom.messages.length - 1];
         await User.populate(savedMessage, { path: 'sender', select: 'username' });
 
-        // Emit message to all clients in the classroom's socket.io room
-        // This requires `io` instance to be accessible, usually via `req.app.get('io')`
         if (req.app.get('io')) {
              req.app.get('io').to(req.params.id).emit('message', {
                  senderId: savedMessage.sender._id,
-                 senderUsername: savedMessage.sender.username, // Use username for display
+                 senderUsername: savedMessage.sender.username,
                  content: savedMessage.content,
                  type: savedMessage.type,
                  timestamp: savedMessage.timestamp
@@ -182,7 +159,6 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
             console.warn("Socket.IO instance not available in classRoutes for message emission.");
         }
 
-
         res.status(201).json({ message: 'Message envoyé.' });
     } catch (error) {
         console.error("Error sending message:", error);
@@ -190,13 +166,6 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
     }
 });
 
----
-
-## Corrected Class File Upload Route
-
-I've updated the `router.post('/:id/files', ...)` route to correctly handle different file types (images, PDFs, Word docs) for Cloudinary uploads. This includes setting the correct `resource_type`, generating a proper `public_id` (with extension for raw files), and using the `type: 'authenticated'` parameter for PDFs and Word documents to ensure they are accessible.
-
-```javascript
 // Upload a file to the classroom
 router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single('classFile'), async (req, res) => {
     try {
@@ -237,7 +206,6 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
 
         console.log('2. Tentative d\'upload vers Cloudinary...');
 
-        // --- START OF CRITICAL CORRECTIONS FOR CLOUDINARY UPLOAD ---
         let classFileResourceType;
         const folderName = `class_files/${classId}`;
         const originalBaseName = path.parse(req.file.originalname).name;
@@ -247,14 +215,11 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
 
         if (req.file.mimetype.startsWith('image/')) {
             classFileResourceType = 'image';
-            // For IMAGES: public_id should NOT include the file extension.
             customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}`;
         } else if (fileExtension === '.pdf' || fileExtension === '.doc' || fileExtension === '.docx') {
             classFileResourceType = 'raw';
-            // For RAW files (PDF, DOCX): public_id MUST include the file extension.
             customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
         } else {
-            // Fallback for other file types, using 'auto' detection by Cloudinary
             classFileResourceType = 'auto';
             customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
         }
@@ -266,8 +231,6 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
             overwrite: true,
             type: classFileResourceType === 'raw' ? 'authenticated' : 'upload'
         });
-        // --- END OF CRITICAL CORRECTIONS FOR CLOUDINARY UPLOAD ---
-
 
         console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
@@ -278,13 +241,10 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
             return res.redirect(`/classes/${classId}`);
         }
 
-        // Adjust fileUrl for raw files if extension is missing (Cloudinary's behavior)
         let fileUrl = cloudinaryUploadResult.secure_url;
         const originalFullName = req.file.originalname;
         const detectedExtension = path.extname(originalFullName).toLowerCase();
 
-        // This ensures the URL for raw files ends with the correct extension,
-        // as Cloudinary's 'raw' URLs might sometimes omit it in the direct path.
         if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
             fileUrl += detectedExtension;
         }
