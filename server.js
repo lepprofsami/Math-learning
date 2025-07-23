@@ -14,7 +14,7 @@ const app = express();
 const server = http.createServer(app);
 const io = socketIo(server);
 
-// --- Configuration Cloudinary ---
+// --- Cloudinary Configuration ---
 cloudinary.config({
     cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
     api_key: process.env.CLOUDINARY_API_KEY,
@@ -26,22 +26,22 @@ cloudinary.config({
 const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/math_learning';
 
 mongoose.connect(MONGODB_URI)
-    .then(() => console.log('Connexion à MongoDB réussie !'))
-    .catch(err => console.error('Erreur de connexion à MongoDB :', err));
+    .then(() => console.log('Connected to MongoDB successfully!'))
+    .catch(err => console.error('MongoDB connection error:', err));
 
 // --- Middleware Setup ---
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
-// Configuration du moteur de vues EJS
+// EJS view engine configuration
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 app.set('io', io);
 
-// Servir les fichiers statiques (CSS, JS côté client, images)
+// Serve static files (CSS, client-side JS, images)
 app.use(express.static(path.join(__dirname, 'public')));
 
-// --- Session Configuration avec connect-mongo ---
+// --- Session Configuration with connect-mongo ---
 const sessionMiddleware = session({
     secret: process.env.SESSION_SECRET || 'your_secret_key',
     resave: false,
@@ -57,20 +57,20 @@ const sessionMiddleware = session({
 
 app.use(sessionMiddleware);
 
-// --- Middleware pour rendre 'user' et les messages flash disponibles dans toutes les vues EJS ---
+// --- Middleware to make 'user' and flash messages available in all EJS views ---
 app.use((req, res, next) => {
     res.locals.user = req.session.user;
     next();
 });
 
-// --- Multer Configuration pour l'upload vers Cloudinary ---
+// --- Multer Configuration for Cloudinary Upload ---
 const upload = multer({
-    storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire, pas sur le disque
-    limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
+    storage: multer.memoryStorage(), // IMPORTANT: stores the file in memory, not on disk
+    limits: { fileSize: 10 * 1024 * 1024 }, // File size limit to 10 MB for images, PDF, Word
     fileFilter: (req, file, cb) => {
         if (!file || !file.originalname) {
-            console.error('Multer fileFilter: Fichier ou originalname manquant/null.', file);
-            return cb(new Error('Fichier invalide ou nom de fichier manquant.'));
+            console.error('Multer fileFilter: Missing/null file or originalname.', file);
+            return cb(new Error('Invalid file or missing filename.'));
         }
 
         const allowedMimeTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
@@ -80,39 +80,39 @@ const upload = multer({
         if (mimetype && extname) {
             return cb(null, true);
         }
-        cb(new Error('Seuls les fichiers images (jpeg, jpg, png, gif), PDF, DOC et DOCX sont autorisés !'));
+        cb(new Error('Only images (jpeg, jpg, png, gif), PDF, DOC, and DOCX files are allowed!'));
     }
 });
 // --------------------------------------------------------------------------
 
-// --- Import des modèles et routes ---
+// --- Import Models and Routes ---
 const Classroom = require('./models/Classroom');
 const authRoutes = require('./routes/auth');
 const dashboardRoutes = require('./routes/dashboard');
 const classRoutes = require('./routes/classRoutes');
 
-// --- Middleware pour vérifier l'authentification ---
+// --- Authentication Middleware ---
 function isLoggedIn(req, res, next) {
     if (req.session.user) {
         return next();
     }
-    res.locals.error = 'Veuillez vous connecter pour accéder à cette page.';
+    res.locals.error = 'Please log in to access this page.';
     res.redirect('/login');
 }
 
-// --- Routes Générales ---
+// --- General Routes ---
 app.use('/', authRoutes);
 app.use('/', dashboardRoutes);
 app.use('/classes', classRoutes);
 
-// --- API Route pour l'upload de fichiers dans le CHAT vers Cloudinary ---
+// --- API Route for Chat File Upload to Cloudinary ---
 app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     if (!req.file) {
-        let message = 'Aucun fichier n\'a été uploadé.';
+        let message = 'No file uploaded.';
         if (req.fileFilterError) {
             message = req.fileFilterError.message;
         } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
-            message = 'Le fichier est trop volumineux ! Max 10MB autorisé.';
+            message = 'File is too large! Max 10MB allowed.';
         } else if (req.multerError) {
             message = req.multerError.message;
         }
@@ -121,67 +121,69 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
 
     try {
         const fileType = req.file.mimetype;
-        let cloudinaryResourceType = 'auto';
         const folderName = 'chat_uploads';
+
+        const originalBaseName = path.parse(req.file.originalname).name;
+        const fileExtension = path.extname(req.file.originalname).toLowerCase();
+        const uniqueSuffix = Date.now();
+        let customPublicId;
+        let cloudinaryResourceType;
 
         if (fileType.startsWith('image/')) {
             cloudinaryResourceType = 'image';
+            // For IMAGES: public_id should NOT include the file extension.
+            // Cloudinary will automatically add it based on its detected format.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}`;
         } else if (fileType === 'application/pdf' || fileType.includes('application/msword') || fileType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
             cloudinaryResourceType = 'raw';
+            // For RAW files (PDF, DOCX): public_id MUST include the file extension.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        } else {
+            // Fallback for other file types, ideally prevented by Multer's fileFilter
+            cloudinaryResourceType = 'auto';
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
         }
-
-        // --- NOUVELLE LOGIQUE : Construction explicite du public_id ---
-        const originalBaseName = path.parse(req.file.originalname).name;
-        const fileExtension = path.extname(req.file.originalname).toLowerCase();
-        // Use a timestamp to ensure uniqueness
-        const uniqueSuffix = Date.now(); 
-
-        // Construct the public_id including the base name, unique suffix, and extension
-        // Example: chat_uploads/my_document_1678888888888.pdf
-        const customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
-        // -------------------------------------------------------------------
 
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
                     resource_type: cloudinaryResourceType,
-                    public_id: customPublicId, // Utilisez le public_id construit
-                    unique_filename: false, // Ne laissez pas Cloudinary ajouter un suffixe, nous le faisons déjà
-                    overwrite: true // Permet de remplacer si un ID est généré deux fois (peu probable avec Date.now())
+                    public_id: customPublicId,
+                    unique_filename: false,
+                    overwrite: true
                 },
                 (error, result) => {
                     if (error) {
                         console.error("Cloudinary upload_stream error (chat):", error);
                         return reject(error);
                     }
-                    console.log("Cloudinary chat upload result:", result); // LOG CRUCIAL
+                    console.log("Cloudinary chat upload result:", result);
                     resolve(result);
                 }
             );
             uploadStream.end(req.file.buffer);
         });
 
-        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL (comme fallback) ---
+        // The URL returned by Cloudinary (result.secure_url) should now be correct due to the public_id setting.
+        // The fallback logic below is still there but should rarely be needed for these cases.
         let fileUrl = result.secure_url;
         const originalFullName = req.file.originalname;
         const detectedExtension = path.extname(originalFullName).toLowerCase();
 
-        // This condition should now rarely be true if public_id is correctly defined above,
-        // as Cloudinary should return the URL with the full public_id (including extension).
+        // This condition should rarely be true now if public_id is correctly defined above.
         if (result.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
-            fileUrl += detectedExtension; // Add the detected extension directly
+            fileUrl += detectedExtension;
         }
-        // --- FIN : LOGIQUE DÉFINITIVE ---
 
         res.json({ success: true, fileUrl: fileUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
     } catch (error) {
-        console.error('Erreur lors de l\'upload vers Cloudinary (chat) :', error);
-        res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'upload du fichier.' });
+        console.error('Error during Cloudinary upload (chat):', error);
+        res.status(500).json({ success: false, message: 'Server error during file upload.' });
     }
 }, (error, req, res, next) => {
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
-            return res.status(400).json({ success: false, message: 'Fichier trop volumineux ! Max 10MB autorisé.' });
+            return res.status(400).json({ success: false, message: 'File too large! Max 10MB allowed.' });
         }
         return res.status(400).json({ success: false, message: error.message });
     } else if (error) {
@@ -190,30 +192,30 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     next();
 });
 
-// --- ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
+// --- Route: Class File Deposit (outside chat) ---
 app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
     try {
         const classId = req.params.classId;
         const file = req.file;
 
-        console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
-        console.log('1. Objet req.file reçu par Multer:', file);
+        console.log('--- Starting class file upload process ---');
+        console.log('1. req.file object received by Multer:', file);
         if (file && file.buffer) {
-            console.log('    -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', file.buffer.length, 'octets.');
+            console.log('    -> Multer stored file in memory (buffer exists). Size:', file.buffer.length, 'bytes.');
         } else if (file && file.path) {
-            console.log('    -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', file.path);
+            console.log('    -> WARNING: Multer stored file on disk (path exists). Path:', file.path);
         } else {
-            console.log('    -> req.file est inattendu ou vide.');
+            console.log('    -> req.file is unexpected or empty.');
         }
 
         const { category } = req.body;
 
         if (!file) {
-             let errorMessage = 'Aucun fichier n\'a été sélectionné.';
+             let errorMessage = 'No file selected.';
              if (req.fileFilterError) {
                  errorMessage = req.fileFilterError.message;
              } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
-                 errorMessage = 'Le fichier est trop volumineux ! Max 10MB autorisé.';
+                 errorMessage = 'File is too large! Max 10MB allowed.';
              } else if (req.multerError) {
                  errorMessage = req.multerError.message;
              }
@@ -222,62 +224,63 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         }
 
         if (!category) {
-            res.locals.error = 'Veuillez sélectionner une catégorie pour le fichier.';
+            res.locals.error = 'Please select a category for the file.';
             return res.redirect(`/classes/${classId}`);
         }
 
         const b64 = Buffer.from(file.buffer).toString('base64');
         let dataURI = 'data:' + file.mimetype + ';base64,' + b64;
 
-        console.log('2. Tentative d\'upload vers Cloudinary...');
+        console.log('2. Attempting to upload to Cloudinary...');
 
-        let classFileResourceType = 'auto';
+        let classFileResourceType;
         const folderName = `class_files/${classId}`;
+
+        const originalBaseName = path.parse(file.originalname).name;
+        const fileExtension = path.extname(file.originalname).toLowerCase();
+        const uniqueSuffix = Date.now();
+        let customPublicId;
 
         if (file.mimetype.startsWith('image/')) {
             classFileResourceType = 'image';
+            // For IMAGES: public_id should NOT include the file extension.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}`;
         } else if (file.mimetype === 'application/pdf' || file.mimetype.includes('application/msword') || file.mimetype.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
             classFileResourceType = 'raw';
+            // For RAW files (PDF, DOCX): public_id MUST include the file extension.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        } else {
+            // Fallback for other file types
+            classFileResourceType = 'auto';
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
         }
-
-        // --- NOUVELLE LOGIQUE : Construction explicite du public_id ---
-        const originalBaseName = path.parse(file.originalname).name;
-        const fileExtension = path.extname(file.originalname).toLowerCase();
-        // Use a timestamp to ensure uniqueness
-        const uniqueSuffix = Date.now(); 
-
-        // Construct the public_id including the base name, unique suffix, and extension
-        // Example: class_files/classId/my_document_1678888888888.pdf
-        const customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
-        // -------------------------------------------------------------------
 
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
-            public_id: customPublicId, // Utilisez le public_id construit
+            public_id: customPublicId,
             resource_type: classFileResourceType,
-            unique_filename: false, // Ne laissez pas Cloudinary ajouter un suffixe
-            overwrite: true // Permet de remplacer si un ID est généré deux fois (peu probable)
+            unique_filename: false,
+            overwrite: true
         });
 
-        console.log("Cloudinary class file upload result:", cloudinaryUploadResult); // LOG CRUCIAL
+        console.log("Cloudinary class file upload result:", cloudinaryUploadResult);
 
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
-            console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
+            console.log('    -> Secure Cloudinary URL received:', cloudinaryUploadResult.secure_url);
         } else {
-            console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
+            console.error('    -> ERROR: Missing Cloudinary secure_url or upload failed!');
         }
 
-        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL (comme fallback) ---
+        // The URL returned by Cloudinary (cloudinaryUploadResult.secure_url) should now be correct.
+        // The fallback logic below is still there but should rarely be needed for these cases.
         let fileUrl = cloudinaryUploadResult.secure_url;
         const originalFullName = file.originalname;
         const detectedExtension = path.extname(originalFullName).toLowerCase();
 
-        // This condition should now rarely be true if public_id is correctly defined above.
         if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
-            fileUrl += detectedExtension; // Add the detected extension directly
+            fileUrl += detectedExtension;
         }
-        // --- FIN : LOGIQUE DÉFINITIVE ---
 
-        const publicId = cloudinaryUploadResult.public_id; // publicId will now include the full path and extension
+        const publicId = cloudinaryUploadResult.public_id;
 
         const newFile = {
             fileName: file.originalname,
@@ -290,47 +293,47 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             publicId: publicId
         };
 
-        console.log('4. Objet newFile prêt à être sauvegardé :', newFile);
+        console.log('4. newFile object ready to be saved:', newFile);
 
         const classroom = await Classroom.findById(classId);
         if (!classroom) {
-            res.locals.error = 'Classe introuvable.';
+            res.locals.error = 'Classroom not found.';
             return res.redirect('/');
         }
 
         classroom.files.push(newFile);
         await classroom.save();
 
-        res.locals.success = 'Fichier uploadé et enregistré avec succès !';
+        res.locals.success = 'File uploaded and saved successfully!';
         res.redirect(`/classes/${classId}`);
     } catch (error) {
-        console.error('Erreur CRITIQUE lors de l\'upload du fichier de classe (Dépôt) :', error);
-        res.locals.error = 'Erreur lors de l\'upload du fichier : ' + error.message;
+        console.error('CRITICAL Error during class file upload (Deposit):', error);
+        res.locals.error = 'Error during file upload: ' + error.message;
         res.redirect(`/classes/${req.params.classId}`);
     }
 });
 
-// --- Routes Générales et Socket.IO ---
-// Route principale (accueil)
+// --- General Routes and Socket.IO ---
+// Main route (home)
 app.get('/', (req, res) => {
-    res.render('index', { title: 'Accueil - Math-learning' });
+    res.render('index', { title: 'Home - Math-learning' });
 });
 
-// Route de démo pour vider la DB (DEV ONLY - À RETIRER EN PRODUCTION)
+// Demo route to clear DB (DEV ONLY - REMOVE IN PRODUCTION)
 app.get('/clear-db-dev-only', async (req, res) => {
     if (process.env.NODE_ENV !== 'production') {
         try {
             await mongoose.connection.dropCollection('users');
             await mongoose.connection.dropCollection('classrooms');
             await mongoose.connection.dropCollection('sessions');
-            console.log('✅ Base de données (users, classrooms, sessions) vidée avec succès !');
-            res.send('Base de données (users, classrooms, sessions) vidée avec succès !');
+            console.log('✅ Database (users, classrooms, sessions) cleared successfully!');
+            res.send('Database (users, classrooms, sessions) cleared successfully!');
         } catch (error) {
-            console.error('Erreur lors du vidage de la base de données :', error);
-            res.status(500).send('Erreur lors du vidage de la base de données.');
+            console.error('Error clearing database:', error);
+            res.status(500).send('Error clearing database.');
         }
     } else {
-        res.status(403).send('Accès interdit en production.');
+        res.status(403).send('Access forbidden in production.');
     }
 });
 
@@ -338,7 +341,7 @@ app.get('/clear-db-dev-only', async (req, res) => {
 io.use((socket, next) => {
     sessionMiddleware(socket.request, {}, (err) => {
         if (err) {
-            console.error('Erreur lors de l\'accès à la session Socket.IO:', err);
+            console.error('Error accessing Socket.IO session:', err);
             return next(err);
         }
         next();
@@ -346,12 +349,12 @@ io.use((socket, next) => {
 });
 
 io.on('connection', (socket) => {
-    console.log('Un utilisateur s\'est connecté :', socket.id);
+    console.log('A user connected:', socket.id);
 
     const userInSession = socket.request.session.user;
 
     if (!userInSession) {
-        console.log('Utilisateur non authentifié via session, déconnexion du socket.');
+        console.log('User not authenticated via session, disconnecting socket.');
         return socket.disconnect(true);
     }
 
@@ -361,7 +364,7 @@ io.on('connection', (socket) => {
 
     socket.on('joinRoom', (classroomId) => {
         socket.join(classroomId);
-        console.log(`${socket.username} a rejoint la salle : ${classroomId}`);
+        console.log(`${socket.username} joined room: ${classroomId}`);
     });
 
     // Modified chatMessage event to handle different message types
@@ -370,16 +373,16 @@ io.on('connection', (socket) => {
         const senderUsername = socket.username;
 
         if (!senderId || !senderUsername) {
-            console.error('Erreur: ID ou NOM D\'UTILISATEUR de l\'expéditeur manquant sur le socket.');
+            console.error('Error: Sender ID or USERNAME missing on socket.');
             return;
         }
 
-        console.log(`Message reçu dans la classe ${classroomId} de ${senderUsername} (Type: ${type}):`, content || fileUrl);
+        console.log(`Message received in class ${classroomId} from ${senderUsername} (Type: ${type}):`, content || fileUrl);
 
         try {
             const classroom = await Classroom.findById(classroomId);
             if (!classroom) {
-                console.error('Classe non trouvée pour le message :', classroomId);
+                console.error('Classroom not found for message:', classroomId);
                 return;
             }
 
@@ -404,16 +407,16 @@ io.on('connection', (socket) => {
             });
 
         } catch (error) {
-            console.error('Erreur lors de l\'enregistrement ou de l\'envoi du message :', error);
+            console.error('Error saving or sending message:', error);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('Un utilisateur s\'est déconnecté :', socket.id);
+        console.log('A user disconnected:', socket.id);
     });
 });
 
-// --- Démarrage du serveur ---
+// --- Start Server ---
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
     console.log(`Server running on port ${PORT}`);
