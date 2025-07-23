@@ -150,7 +150,9 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
                     resource_type: cloudinaryResourceType,
                     public_id: customPublicId,
                     unique_filename: false,
-                    overwrite: true
+                    overwrite: true,
+                    // *** IMPORTANT CHANGE HERE FOR PUBLIC ACCESS TO RAW FILES ***
+                    type: cloudinaryResourceType === 'raw' ? 'authenticated' : 'upload'
                 },
                 (error, result) => {
                     if (error) {
@@ -211,16 +213,16 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         const { category } = req.body;
 
         if (!file) {
-             let errorMessage = 'No file selected.';
-             if (req.fileFilterError) {
-                 errorMessage = req.fileFilterError.message;
-             } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
-                 errorMessage = 'File is too large! Max 10MB allowed.';
-             } else if (req.multerError) {
-                 errorMessage = req.multerError.message;
-             }
-             res.locals.error = errorMessage;
-             return res.redirect(`/classes/${classId}`);
+            let errorMessage = 'No file selected.';
+            if (req.fileFilterError) {
+                errorMessage = req.fileFilterError.message;
+            } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
+                errorMessage = 'File is too large! Max 10MB allowed.';
+            } else if (req.multerError) {
+                errorMessage = req.multerError.message;
+            }
+            res.locals.error = errorMessage;
+            return res.redirect(`/classes/${classId}`);
         }
 
         if (!category) {
@@ -259,7 +261,9 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             public_id: customPublicId,
             resource_type: classFileResourceType,
             unique_filename: false,
-            overwrite: true
+            overwrite: true,
+            // *** IMPORTANT CHANGE HERE FOR PUBLIC ACCESS TO RAW FILES ***
+            type: classFileResourceType === 'raw' ? 'authenticated' : 'upload'
         });
 
         console.log("Cloudinary class file upload result:", cloudinaryUploadResult);
@@ -368,7 +372,7 @@ io.on('connection', (socket) => {
     });
 
     // Modified chatMessage event to handle different message types
-    socket.on('chatMessage', async ({ classroomId, content, type, fileUrl }) => {
+    socket.on('chatMessage', async ({ classroomId, content, type, fileUrl, fileType }) => { // Added fileType here
         const senderId = socket.userId;
         const senderUsername = socket.username;
 
@@ -377,7 +381,7 @@ io.on('connection', (socket) => {
             return;
         }
 
-        console.log(`Message received in class ${classroomId} from ${senderUsername} (Type: ${type}):`, content || fileUrl);
+        console.log(`Message received in class ${classroomId} from ${senderUsername} (Type: ${type}, FileType: ${fileType || 'N/A'}):`, content || fileUrl);
 
         try {
             const classroom = await Classroom.findById(classroomId);
@@ -390,7 +394,8 @@ io.on('connection', (socket) => {
                 sender: senderId,
                 content: content,
                 type: type || 'text',
-                fileUrl: fileUrl, // This is the file URL, potentially modified to have the extension
+                fileUrl: fileUrl,
+                fileType: fileType, // Store fileType in the message model
                 timestamp: new Date()
             };
 
@@ -403,6 +408,7 @@ io.on('connection', (socket) => {
                 content: content,
                 type: type || 'text',
                 fileUrl: fileUrl,
+                fileType: fileType, // Emit fileType to clients
                 timestamp: newMessage.timestamp
             });
 
