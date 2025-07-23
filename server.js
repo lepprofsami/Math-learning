@@ -149,7 +149,7 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
             uploadStream.end(req.file.buffer);
         });
 
-        // --- DÉBUT : LOGIQUE MISE À JOUR POUR L'EXTENSION DE FICHIER DANS L'URL ---
+        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL ---
         let fileUrl = result.secure_url;
         // Utilisez toujours req.file.originalname qui devrait contenir le nom complet avec extension (ex: "3maths.pdf")
         const originalFullName = req.file.originalname;
@@ -159,7 +159,7 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
         if (result.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
             fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
         }
-        // --- FIN : LOGIQUE MISE À JOUR ---
+        // --- FIN : LOGIQUE DÉFINITIVE ---
 
         res.json({ success: true, fileUrl: fileUrl, fileType: req.file.mimetype, fileName: req.file.originalname });
     } catch (error) {
@@ -241,7 +241,7 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
 
-        // --- DÉBUT : LOGIQUE MISE À JOUR POUR L'EXTENSION DE FICHIER DANS L'URL ---
+        // --- DÉBUT : LOGIQUE DÉFINITIVE POUR L'EXTENSION DE FICHIER DANS L'URL ---
         let fileUrl = cloudinaryUploadResult.secure_url;
         // Utilisez toujours file.originalname qui devrait contenir le nom complet avec extension
         const originalFullName = file.originalname;
@@ -251,7 +251,7 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
             fileUrl += detectedExtension; // Ajoutez directement l'extension détectée
         }
-        // --- FIN : LOGIQUE MISE À JOUR ---
+        // --- FIN : LOGIQUE DÉFINITIVE ---
 
         const publicId = cloudinaryUploadResult.public_id;
 
