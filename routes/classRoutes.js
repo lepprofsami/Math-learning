@@ -123,9 +123,9 @@ router.get('/:id', isAuthenticated, isClassMember, async (req, res) => {
         console.log(`Number of files: ${classroom.files ? classroom.files.length : 0}`);
         if (classroom.messages && classroom.messages.length > 0) {
             console.log('First message details:');
-            console.log(`  Sender: ${classroom.messages[0].sender ? classroom.messages[0].sender.username : 'N/A'}`);
-            console.log(`  Content: ${classroom.messages[0].content}`);
-            console.log(`  Timestamp: ${classroom.messages[0].timestamp}`);
+            console.log(`  Sender: ${classroom.messages[0].sender ? classroom.messages[0].sender.username : 'N/A'}`);
+            console.log(`  Content: ${classroom.messages[0].content}`);
+            console.log(`  Timestamp: ${classroom.messages[0].timestamp}`);
         }
         console.log('------------------------------------');
         // --- END DEBUGGING LOGS ---
@@ -190,10 +190,17 @@ router.post('/:id/messages', isAuthenticated, isClassMember, async (req, res) =>
     }
 });
 
+---
+
+## Corrected Class File Upload Route
+
+I've updated the `router.post('/:id/files', ...)` route to correctly handle different file types (images, PDFs, Word docs) for Cloudinary uploads. This includes setting the correct `resource_type`, generating a proper `public_id` (with extension for raw files), and using the `type: 'authenticated'` parameter for PDFs and Word documents to ensure they are accessible.
+
+```javascript
 // Upload a file to the classroom
 router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single('classFile'), async (req, res) => {
     try {
-        const classId = req.params.id; // Renommé pour clarté
+        const classId = req.params.id;
         const classroom = await Classroom.findById(classId);
 
         if (!classroom) {
@@ -201,12 +208,8 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
             return res.redirect(`/classes/${classId}`);
         }
 
-        // Gérer les erreurs Multer (par exemple, fichier non sélectionné ou trop gros)
         if (!req.file) {
             let errorMessage = 'Aucun fichier n\'a été sélectionné.';
-            // Multer renvoie des erreurs via `err` dans le callback, pas directement dans `req.fileFilterError` ou `req.multerError`
-            // Il faut donc capturer cela au niveau du middleware Multer si l'on veut des messages plus spécifiques ici.
-            // Pour l'instant, on se base sur l'absence de req.file.
             res.locals.error = errorMessage;
             return res.redirect(`/classes/${classId}`);
         }
@@ -219,52 +222,84 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
             return res.redirect(`/classes/${classId}`);
         }
 
-        // --- Log pour diagnostic (comme demandé précédemment) ---
         console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
         console.log('1. Objet req.file reçu par Multer:', req.file);
         if (req.file && req.file.buffer) {
-            console.log('   -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', req.file.buffer.length, 'octets.');
-        } else if (req.file && req.file.path) { // Ce cas ne devrait plus arriver avec memoryStorage
-            console.log('   -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', req.file.path);
+            console.log('    -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', req.file.buffer.length, 'octets.');
+        } else if (req.file && req.file.path) {
+            console.log('    -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', req.file.path);
         } else {
-            console.log('   -> req.file est inattendu ou vide.');
+            console.log('    -> req.file est inattendu ou vide.');
         }
-        // --- FIN NOUVEAUX LOGS ---
 
-        // Upload vers Cloudinary
         const b64 = Buffer.from(req.file.buffer).toString('base64');
         let dataURI = 'data:' + req.file.mimetype + ';base64,' + b64;
 
         console.log('2. Tentative d\'upload vers Cloudinary...');
 
-        const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
-            folder: `class_files/${classId}`, // Dossier Cloudinary par classe
-            resource_type: 'raw'
-        });
+        // --- START OF CRITICAL CORRECTIONS FOR CLOUDINARY UPLOAD ---
+        let classFileResourceType;
+        const folderName = `class_files/${classId}`;
+        const originalBaseName = path.parse(req.file.originalname).name;
+        const fileExtension = path.extname(req.file.originalname).toLowerCase();
+        const uniqueSuffix = Date.now();
+        let customPublicId;
 
-        // --- Logs pour diagnostic ---
+        if (req.file.mimetype.startsWith('image/')) {
+            classFileResourceType = 'image';
+            // For IMAGES: public_id should NOT include the file extension.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}`;
+        } else if (fileExtension === '.pdf' || fileExtension === '.doc' || fileExtension === '.docx') {
+            classFileResourceType = 'raw';
+            // For RAW files (PDF, DOCX): public_id MUST include the file extension.
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        } else {
+            // Fallback for other file types, using 'auto' detection by Cloudinary
+            classFileResourceType = 'auto';
+            customPublicId = `${folderName}/${originalBaseName}_${uniqueSuffix}${fileExtension}`;
+        }
+
+        const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
+            public_id: customPublicId,
+            resource_type: classFileResourceType,
+            unique_filename: false,
+            overwrite: true,
+            type: classFileResourceType === 'raw' ? 'authenticated' : 'upload'
+        });
+        // --- END OF CRITICAL CORRECTIONS FOR CLOUDINARY UPLOAD ---
+
+
         console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
-            console.log('   -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
+            console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
         } else {
-            console.error('   -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
+            console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
             res.locals.error = 'Erreur: Cloudinary n\'a pas retourné d\'URL pour le fichier.';
             return res.redirect(`/classes/${classId}`);
         }
-        // --- FIN NOUVEAUX LOGS ---
 
-        const fileUrl = cloudinaryUploadResult.secure_url;
+        // Adjust fileUrl for raw files if extension is missing (Cloudinary's behavior)
+        let fileUrl = cloudinaryUploadResult.secure_url;
+        const originalFullName = req.file.originalname;
+        const detectedExtension = path.extname(originalFullName).toLowerCase();
+
+        // This ensures the URL for raw files ends with the correct extension,
+        // as Cloudinary's 'raw' URLs might sometimes omit it in the direct path.
+        if (cloudinaryUploadResult.resource_type === 'raw' && detectedExtension && !fileUrl.toLowerCase().endsWith(detectedExtension)) {
+            fileUrl += detectedExtension;
+        }
+
         const publicId = cloudinaryUploadResult.public_id;
 
         const newFile = {
             fileName: req.file.originalname,
-            filePath: fileUrl, // <--- MAINTENANT C'EST L'URL CLOUDINARY !
+            filePath: fileUrl,
             fileSize: req.file.size,
             fileMimeType: req.file.mimetype,
             uploadDate: new Date(),
             uploader: req.session.user._id,
             category: category,
-            publicId: publicId // Enregistrez l'ID public pour la gestion future
+            publicId: publicId
         };
 
         console.log('4. Objet newFile prêt à être sauvegardé :', newFile);
@@ -277,13 +312,12 @@ router.post('/:id/files', isAuthenticated, isClassMember, classFileUpload.single
     } catch (error) {
         console.error('Erreur CRITIQUE lors de l\'upload du fichier de classe (Dépôt) :', error);
         let errorMessage = 'Erreur serveur lors de l\'upload du fichier : ' + error.message;
-        // Gérer les erreurs spécifiques de Multer si elles sont lancées ici (ex: taille limite)
         if (error instanceof multer.MulterError) {
             if (error.code === 'LIMIT_FILE_SIZE') {
                 errorMessage = 'Le fichier est trop volumineux (max 10MB) !';
             }
-        } else if (error.message.includes('Type de fichier non autorisé')) { // Pour l'erreur de fileFilter
-             errorMessage = 'Type de fichier non autorisé !';
+        } else if (error.message.includes('Type de fichier non autorisé')) {
+            errorMessage = 'Type de fichier non autorisé !';
         }
         res.locals.error = errorMessage;
         res.redirect(`/classes/${req.params.id}`);
