@@ -145,6 +145,8 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
                         console.error("Cloudinary upload_stream error (chat):", error);
                         return reject(error);
                     }
+                    // >>> LOG CRUCIAL POUR LE DÉBOGAGE DU CHAT <<<
+                    console.log("Cloudinary chat upload result (raw):", result);
                     resolve(result);
                 }
             );
@@ -238,7 +240,9 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
             unique_filename: true // Gérer les noms de fichiers dupliqués
         });
 
-        console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
+        // >>> LOG CRUCIAL POUR LE DÉBOGAGE DU DÉPÔT DE FICHIERS <<<
+        console.log("Cloudinary class file upload result (raw):", cloudinaryUploadResult);
+
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
             console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
         } else {
@@ -352,6 +356,8 @@ io.on('connection', (socket) => {
 
         if (!senderId || !senderUsername) {
             console.error('Erreur: ID ou NOM D\'UTILISATEUR de l\'expéditeur manquant sur le socket.');
+            return;
+         pericolore('Erreur: ID ou NOM D\'UTILISATEUR de l\'expéditeur manquant sur le socket.');
             return;
         }
 
