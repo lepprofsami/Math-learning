@@ -70,9 +70,15 @@ const upload = multer({
     storage: multer.memoryStorage(), // TRÈS IMPORTANT : stocke le fichier en mémoire, pas sur le disque
     limits: { fileSize: 10 * 1024 * 1024 }, // Limite de taille de fichier à 10 MB pour images, PDF, Word
     fileFilter: (req, file, cb) => {
+        // **MODIFICATION ICI: Ajout d'une vérification robuste pour file.originalname**
+        if (!file || !file.originalname) {
+            console.error('Multer fileFilter: Fichier ou originalname manquant/null.', file);
+            return cb(new Error('Fichier invalide ou nom de fichier manquant.'));
+        }
+
         const allowedMimeTypes = /jpeg|jpg|png|gif|pdf|doc|docx/;
-const mimetype = allowedMimeTypes.test(file.mimetype);   
-     const extname = allowedMimeTypes.test(path.extname(file.originalname).toLowerCase());
+        const mimetype = allowedMimeTypes.test(file.mimetype);
+        const extname = allowedMimeTypes.test(path.extname(file.originalname).toLowerCase());
 
         if (mimetype && extname) {
             return cb(null, true);
@@ -118,10 +124,22 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
     }
 
     try {
+        const fileType = req.file.mimetype;
+        let cloudinaryResourceType = 'auto'; // Par défaut, mais on va le rendre plus spécifique
+
+        // **MODIFICATION ICI: Ajustement du resource_type pour Cloudinary**
+        if (fileType.startsWith('image/')) {
+            cloudinaryResourceType = 'image';
+        } else if (fileType === 'application/pdf' || fileType.includes('application/msword') || fileType.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+            // Utiliser includes car les types Word peuvent varier légèrement (e.g., 'application/msword' vs 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            cloudinaryResourceType = 'raw'; // Utilisez 'raw' pour les documents non-image
+        }
+        // Pour les autres types de fichiers non explicitement listés, 'auto' restera.
+
         const result = await new Promise((resolve, reject) => {
             const uploadStream = cloudinary.uploader.upload_stream(
                 {
-                    resource_type: "auto",
+                    resource_type: cloudinaryResourceType, // <-- MODIFIÉ ICI
                     folder: 'chat_uploads' // Dossier spécifique pour les uploads de chat sur Cloudinary
                 },
                 (error, result) => {
@@ -135,22 +153,26 @@ app.post('/api/chat/upload-file', upload.single('file'), async (req, res) => {
         });
 
         const publicUrl = result.secure_url;
-        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype });
+        res.json({ success: true, fileUrl: publicUrl, fileType: req.file.mimetype, fileName: req.file.originalname }); // Passez le fileType original et le nom de fichier de Multer au client
     } catch (error) {
         console.error('Erreur lors de l\'upload vers Cloudinary (chat) :', error);
         res.status(500).json({ success: false, message: 'Erreur serveur lors de l\'upload du fichier.' });
     }
 }, (error, req, res, next) => {
+    // Ce middleware de gestion d'erreurs Multer capture les erreurs qui se produisent
+    // avant que la logique de la route ne soit exécutée (par exemple, dépassement de taille, type de fichier non autorisé).
     if (error instanceof multer.MulterError) {
         if (error.code === 'LIMIT_FILE_SIZE') {
             return res.status(400).json({ success: false, message: 'Fichier trop volumineux ! Max 10MB autorisé.' });
         }
         return res.status(400).json({ success: false, message: error.message });
     } else if (error) {
+        // Attrape les erreurs génériques du fileFilter ou autres erreurs inattendues de Multer
         return res.status(400).json({ success: false, message: error.message });
     }
-    next();
+    next(); // Si l'erreur n'est pas une erreur Multer, passer au prochain gestionnaire d'erreurs
 });
+
 
 // --- NOUVELLE ROUTE : Dépôt de Fichiers (hors chat) pour les classes ---
 app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), async (req, res) => {
@@ -162,19 +184,28 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         console.log('--- Démarrage du processus d\'upload de fichier de classe ---');
         console.log('1. Objet req.file reçu par Multer:', file);
         if (file && file.buffer) {
-            console.log('   -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', file.buffer.length, 'octets.');
+            console.log('    -> Multer a stocké le fichier en mémoire (buffer existe). Taille:', file.buffer.length, 'octets.');
         } else if (file && file.path) {
-            console.log('   -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', file.path);
+            console.log('    -> ATTENTION: Multer a stocké le fichier sur disque (path existe). Chemin:', file.path);
         } else {
-            console.log('   -> req.file est inattendu ou vide.');
+            console.log('    -> req.file est inattendu ou vide.');
         }
         // --- FIN NOUVEAUX LOGS ---
 
         const { category } = req.body;
 
+        // **Gestion améliorée des erreurs Multer pour cette route aussi**
         if (!file) {
-            res.locals.error = 'Aucun fichier n\'a été sélectionné.';
-            return res.redirect(`/classes/${classId}`);
+             let errorMessage = 'Aucun fichier n\'a été sélectionné.';
+             if (req.fileFilterError) { // Multer a peut-être défini cette erreur
+                 errorMessage = req.fileFilterError.message;
+             } else if (req.multerError && req.multerError.code === 'LIMIT_FILE_SIZE') {
+                 errorMessage = 'Le fichier est trop volumineux ! Max 10MB autorisé.';
+             } else if (req.multerError) {
+                 errorMessage = req.multerError.message;
+             }
+             res.locals.error = errorMessage;
+             return res.redirect(`/classes/${classId}`);
         }
 
         if (!category) {
@@ -190,17 +221,29 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         console.log('2. Tentative d\'upload vers Cloudinary...');
         // --- FIN NOUVEAU LOG ---
 
+        // Déterminer le resource_type pour l'upload des fichiers de classe
+        let classFileResourceType = 'auto';
+        if (file.mimetype.startsWith('image/')) {
+            classFileResourceType = 'image';
+        } else if (file.mimetype === 'application/pdf' || file.mimetype.includes('application/msword') || file.mimetype.includes('application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+            classFileResourceType = 'raw';
+        }
+
         const cloudinaryUploadResult = await cloudinary.uploader.upload(dataURI, {
             folder: `class_files/${classId}`, // Dossier Cloudinary par classe
-            resource_type: 'auto'
+            resource_type: classFileResourceType, // <-- MODIFIÉ ICI
+            // NOUVELLES OPTIONS ESSENTIELLES POUR CONSERVER L'EXTENSION :
+            public_id: file.originalname.replace(/\..+$/, ''), // Nom du fichier sans extension pour l'ID public
+            use_filename: true, // Utiliser le public_id comme nom de fichier dans l'URL
+            unique_filename: true // Ajoute un suffixe unique si nécessaire
         });
 
         // --- NOUVEAUX LOGS POUR DIAGNOSTIC ---
         console.log('3. Résultat de l\'upload Cloudinary:', cloudinaryUploadResult);
         if (cloudinaryUploadResult && cloudinaryUploadResult.secure_url) {
-            console.log('   -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
+            console.log('    -> URL sécurisée Cloudinary reçue:', cloudinaryUploadResult.secure_url);
         } else {
-            console.error('   -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
+            console.error('    -> ERREUR: Cloudinary secure_url manquante ou upload échoué !');
         }
         // --- FIN NOUVEAUX LOGS ---
 
@@ -208,7 +251,7 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         const publicId = cloudinaryUploadResult.public_id; // Stocke l'ID public pour une éventuelle suppression future
 
         const newFile = {
-            fileName: file.originalname,
+            fileName: file.originalname, // Assurez-vous d'utiliser le nom original ici aussi
             filePath: fileUrl, // Enregistre l'URL Cloudinary
             fileSize: file.size,
             fileMimeType: file.mimetype,
@@ -238,6 +281,7 @@ app.post('/classes/:classId/files', isLoggedIn, upload.single('classFile'), asyn
         res.redirect(`/classes/${req.params.classId}`);
     }
 });
+
 
 // Route principale (accueil)
 app.get('/', (req, res) => {
