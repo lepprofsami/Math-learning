@@ -57,7 +57,7 @@
             border-radius: 5px;
             cursor: pointer;
         }
-        
+
         /* Style des images dans le chat */
         .message-item .chat-image {
             max-width: 100%; /* S'assure que l'image ne déborde pas du conteneur de message */
@@ -68,19 +68,41 @@
             box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Petite ombre pour un meilleur rendu */
         }
 
-        /* NOUVEAU: Style pour les liens de documents */
-        .message-item .chat-document {
-            display: inline-block; /* Permet le padding et margin */
+        /* NOUVEAU: Styles pour les conteneurs de documents (PDF, Word) */
+        .message-item .chat-document-container {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-start; /* Aligne les éléments à gauche */
+            gap: 5px;
+            margin-top: 5px;
+        }
+
+        .message-item .chat-document-link {
+            display: inline-flex; /* Permet l'alignement de l'icône et du texte */
+            align-items: center;
             background-color: #e9ecef;
-            padding: 5px 10px;
+            padding: 8px 12px;
             border-radius: 5px;
             text-decoration: none;
             color: #007bff;
             font-weight: bold;
+            transition: background-color 0.2s ease;
         }
-        .message-item .chat-document:hover {
+        .message-item .chat-document-link i {
+            margin-right: 8px; /* Espace entre l'icône et le texte */
+        }
+        .message-item .chat-document-link:hover {
             background-color: #dee2e6;
             text-decoration: underline;
+        }
+
+        /* Style pour l'iframe des PDF */
+        .message-item .chat-pdf-iframe {
+            width: 100%;
+            height: 400px; /* Hauteur fixe pour l'aperçu du PDF */
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            overflow: hidden; /* Cache les barres de défilement de l'iframe si le contenu est trop grand */
         }
     </style>
 
@@ -136,12 +158,36 @@
                                     Utilisateur Inconnu
                                 <% } %>
                             :</strong>
-                            <% if (message.type === 'image') { %>
+                            <% if (message.type === 'image' && message.fileUrl) { %>
                                 <img src="<%= message.fileUrl %>" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">
-                            <% } else if (message.type === 'file') { %>
-                                <a href="<%= message.fileUrl %>" target="_blank" class="chat-document">
-                                    <i class="fas fa-file"></i> Télécharger le document (<%= message.content || 'Fichier' %>)
-                                </a>
+                            <% } else if (message.type === 'file' && message.fileUrl) { %>
+                                <%
+                                    // Determine icon based on file extension
+                                    let fileIconClass = 'fas fa-file'; // Default icon
+                                    let fileNameDisplay = message.content || message.fileName || 'Document';
+                                    const fileExtension = message.fileUrl ? message.fileUrl.split('.').pop().toLowerCase() : '';
+
+                                    if (fileExtension === 'pdf') {
+                                        fileIconClass = 'fas fa-file-pdf';
+                                    } else if (fileExtension === 'doc' || fileExtension === 'docx') {
+                                        fileIconClass = 'fas fa-file-word';
+                                    } else if (fileExtension === 'xls' || fileExtension === 'xlsx') {
+                                        fileIconClass = 'fas fa-file-excel';
+                                    } else if (fileExtension === 'ppt' || fileExtension === 'pptx') {
+                                        fileIconClass = 'fas fa-file-powerpoint';
+                                    } else if (fileExtension === 'zip' || fileExtension === 'rar') {
+                                        fileIconClass = 'fas fa-file-archive';
+                                    }
+                                %>
+                                <div class="chat-document-container">
+                                    <% if (fileExtension === 'pdf') { %>
+                                        <p><strong>Aperçu PDF :</strong></p>
+                                        <iframe src="<%= message.fileUrl %>" class="chat-pdf-iframe"></iframe>
+                                    <% } %>
+                                    <a href="<%= message.fileUrl %>" target="_blank" class="chat-document-link" download="<%= fileNameDisplay %>">
+                                        <i class="<%= fileIconClass %>"></i> Télécharger <%= fileNameDisplay %>
+                                    </a>
+                                </div>
                             <% } else { %>
                                 <%= message.content %>
                             <% } %>
@@ -157,7 +203,7 @@
                 <button type="button" id="uploadFileButton" class="button">Fichier (<i class="fas fa-paperclip" style="vertical-align: middle;"></i>)</button>
             </div>
             <div id="filePreview" class="image-preview-container" style="display: none;">
-                <span id="previewContent"></span> 
+                <span id="previewContent"></span>
                 <span id="fileName"></span>
                 <button type="button" id="removeFileButton" class="remove-image-button">X</button>
             </div>
@@ -207,19 +253,17 @@
                     <% categorizedFiles.exercise.forEach(function(file) { %>
                         <li>
                             <%
-                                // ATTENTION: Cette section utilise toujours le chemin local '/uploads/'.
-                                // Elle nécessitera des modifications pour utiliser Cloudinary si vous voulez uploader ces fichiers là aussi.
                                 let displayFileName = file.fileName || 'Fichier sans nom';
                                 let fileUrl = '#'; // Fallback
-                                // Si file.filePath est une URL Cloudinary, utilisez-la directement
+                                // If file.filePath is a Cloudinary URL, use it directly
                                 if (file.filePath && typeof file.filePath === 'string' && file.filePath.startsWith('http')) {
                                     fileUrl = file.filePath;
                                 } else if (file.filePath && typeof file.filePath === 'string') {
-                                    // Ancien chemin local, à terme à supprimer ou adapter
+                                    // Old local path, eventually to be removed or adapted
                                     const pathParts = file.filePath.split(/[\\/]/);
                                     const fileNameInPath = pathParts[pathParts.length - 1];
                                     if (fileNameInPath) {
-                                        fileUrl = "/uploads/" + fileNameInPath; // Cela ne fonctionnera plus sur Render sans stockage local
+                                        fileUrl = "/uploads/" + fileNameInPath; // This will no longer work on Render without local storage
                                     }
                                 }
                             %>
@@ -334,30 +378,35 @@
 
         const classroomId = '<%= classroom._id %>';
         const currentUsername = '<%= user.username %>';
+        // Get the current user's ID from session.user._id (assuming it's available)
+        const currentUserId = '<%= user._id %>'; // IMPORTANT: Make sure user._id is passed to EJS
 
         // Références aux éléments HTML du chat
         const messagesDiv = document.getElementById('messages');
         const messageInput = document.getElementById('messageInput');
         const chatForm = document.getElementById('chatForm');
 
-        // Éléments pour l'upload de fichiers (MODIFIÉS)
-        const uploadFileButton = document.getElementById('uploadFileButton'); // ID MODIFIÉ
-        const fileUploadInput = document.getElementById('fileUploadInput');     // ID MODIFIÉ
-        const filePreviewContainer = document.getElementById('filePreview');   // ID MODIFIÉ
-        const previewContent = document.getElementById('previewContent');     // NOUVEAU pour le contenu d'aperçu
-        const fileNameSpan = document.getElementById('fileName');             // ID MODIFIÉ
-        const removeFileButton = document.getElementById('removeFileButton');   // ID MODIFIÉ
+        // Éléments pour l'upload de fichiers
+        const uploadFileButton = document.getElementById('uploadFileButton');
+        const fileUploadInput = document.getElementById('fileUploadInput');
+        const filePreviewContainer = document.getElementById('filePreview');
+        const previewContent = document.getElementById('previewContent');
+        const fileNameSpan = document.getElementById('fileName');
+        const removeFileButton = document.getElementById('removeFileButton');
 
-        let selectedFile = null; // MODIFIÉ: Renommé selectedImageFile en selectedFile
-        let currentMessageType = 'text'; // Peut être 'text', 'image' ou 'file'
-        let currentFileUrl = ''; // MODIFIÉ: Renommé currentImageUrl en currentFileUrl
+        let selectedFile = null;
+        let currentMessageType = 'text'; // Can be 'text', 'image' or 'file'
+        let currentFileUrl = '';
+        let currentFileMimeType = ''; // NEW: To store the detected MIME type
 
-        // Confirmer le chargement du client Socket.IO
+        // Confirm Socket.IO client loaded
         console.log("Socket.IO client loaded.");
         console.log("Classroom ID:", classroomId);
         console.log("Current User:", currentUsername);
+        console.log("Current User ID:", currentUserId);
 
-        // 1. Rejoindre la salle de chat spécifique à la classe
+
+        // 1. Join the specific classroom chat room
         if (classroomId) {
             socket.emit('joinRoom', classroomId);
             console.log(`Client trying to join room: ${classroomId}`);
@@ -365,21 +414,22 @@
             console.error("Classroom ID is not defined for Socket.IO joinRoom.");
         }
 
-        // --- Logique d'upload de fichiers (MODIFIÉE) ---
+        // --- File Upload Logic ---
         uploadFileButton.addEventListener('click', () => {
-            fileUploadInput.click(); // Simule le clic sur l'input de type file
+            fileUploadInput.click(); // Simulate click on the file input
         });
 
         fileUploadInput.addEventListener('change', (event) => {
             const file = event.target.files[0];
             if (file) {
-                selectedFile = file; // MODIFIÉ
-                fileNameSpan.textContent = file.name; // Affiche le nom du fichier
-                filePreviewContainer.style.display = 'flex'; // Affiche le conteneur d'aperçu
+                selectedFile = file;
+                currentFileMimeType = file.type; // Store MIME type
+                fileNameSpan.textContent = file.name;
+                filePreviewContainer.style.display = 'flex';
 
-                // Aperçu spécifique selon le type de fichier
+                // Specific preview based on file type
                 if (file.type.startsWith('image/')) {
-                    previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Aperçu de l'image" style="max-width:100px; max-height:100px; border-radius:3px;">`;
+                    previewContent.innerHTML = `<img src="${URL.createObjectURL(file)}" alt="Image Preview" style="max-width:100px; max-height:100px; border-radius:3px;">`;
                     currentMessageType = 'image';
                 } else if (file.type === 'application/pdf') {
                     previewContent.innerHTML = `<i class="fas fa-file-pdf" style="font-size: 40px; color: #dc3545;"></i>`;
@@ -392,22 +442,22 @@
                     currentMessageType = 'file';
                 }
 
-                // Désactive le champ de message textuel
+                // Disable text message input
                 messageInput.value = `[${file.type.startsWith('image/') ? 'Image' : 'Fichier'} inséré: ${file.name}]`;
                 messageInput.disabled = true;
             } else {
-                // Si aucun fichier n'est sélectionné ou si l'utilisateur annule
+                // If no file selected or user cancels
                 resetChatInput();
             }
         });
 
-        removeFileButton.addEventListener('click', () => { // MODIFIÉ
-            resetChatInput(); // Réinitialise l'input du chat, y compris le fichier
+        removeFileButton.addEventListener('click', () => {
+            resetChatInput(); // Reset chat input, including file
         });
 
-        // 2. Gérer l'envoi d'un message via le formulaire
+        // 2. Handle message submission via form
         chatForm.addEventListener('submit', async (e) => {
-            e.preventDefault(); // Empêche le rechargement de la page
+            e.preventDefault(); // Prevent page reload
 
             let messageToSend = {
                 classroomId: classroomId,
@@ -417,11 +467,9 @@
 
             if ((currentMessageType === 'image' || currentMessageType === 'file') && selectedFile) {
                 const formData = new FormData();
-                // MODIFIÉ: 'file' doit correspondre au nom attendu par Multer sur le serveur
                 formData.append('file', selectedFile);
 
                 try {
-                    // MODIFIÉ: L'URL de la route d'upload
                     const response = await fetch('/api/chat/upload-file', {
                         method: 'POST',
                         body: formData
@@ -429,71 +477,99 @@
                     const result = await response.json();
 
                     if (result.success) {
-                        currentFileUrl = result.fileUrl; // MODIFIÉ
-                        messageToSend.fileUrl = currentFileUrl; // MODIFIÉ
-                        messageToSend.content = selectedFile.name; // Envoie le nom du fichier comme contenu pour les fichiers
-                        messageToSend.type = result.fileType.startsWith('image/') ? 'image' : 'file'; // S'assure que le type est correct
-                        console.log('Fichier uploadé, URL:', currentFileUrl);
+                        currentFileUrl = result.fileUrl;
+                        currentFileMimeType = result.fileType; // Get actual MIME type from server
+                        messageToSend.fileUrl = currentFileUrl;
+                        messageToSend.fileType = currentFileMimeType; // Add fileType to emitted message
+                        messageToSend.content = selectedFile.name; // Send filename as content for files
+                        messageToSend.type = result.fileType.startsWith('image/') ? 'image' : 'file'; // Ensure type is correct
+                        console.log('File uploaded, URL:', currentFileUrl, 'Type:', currentFileMimeType);
                     } else {
-                        alert('Erreur lors du téléchargement du fichier : ' + result.message);
+                        alert('Error uploading file: ' + result.message);
                         resetChatInput();
-                        return; // Empêche l'envoi du message si l'upload a échoué
+                        return; // Prevent message sending if upload failed
                     }
                 } catch (error) {
-                    console.error('Erreur réseau ou serveur lors de l\'upload de fichier:', error);
-                    alert('Erreur réseau lors du téléchargement du fichier.');
+                    console.error('Network or server error during file upload:', error);
+                    alert('Network error during file upload.');
                     resetChatInput();
-                    return; // Empêche l'envoi du message en cas d'erreur
+                    return; // Prevent message sending in case of error
                 }
             } else {
-                // Si c'est un message texte, s'assurer qu'il y a du contenu
+                // If it's a text message, ensure there is content
                 if (!messageToSend.content) {
-                    alert('Veuillez écrire un message ou insérer un fichier.');
+                    alert('Please write a message or insert a file.');
                     return;
                 }
-                messageToSend.type = 'text'; // S'assure que le type est 'text' si pas de fichier
+                messageToSend.type = 'text'; // Ensure type is 'text' if no file
             }
 
             console.log('Client emitting chatMessage:', messageToSend);
             socket.emit('chatMessage', messageToSend);
 
-            resetChatInput(); // Réinitialise l'input après l'envoi
+            resetChatInput(); // Reset input after sending
 
-            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Fait défiler la boîte de messages vers le bas
+            messagesDiv.scrollTop = messagesDiv.scrollHeight; // Scroll chat box to bottom
         });
 
-        // Fonction pour réinitialiser l'input du chat (MODIFIÉE)
+        // Function to reset chat input
         function resetChatInput() {
             messageInput.value = '';
             messageInput.disabled = false;
             currentMessageType = 'text';
-            selectedFile = null; // MODIFIÉ
-            currentFileUrl = ''; // MODIFIÉ
-            fileUploadInput.value = ''; // Réinitialise l'input de fichier pour permettre de sélectionner le même fichier à nouveau (MODIFIÉ)
-            filePreviewContainer.style.display = 'none'; // Cache l'aperçu du fichier (MODIFIÉ)
-            previewContent.innerHTML = ''; // VIDE le contenu de l'aperçu (NOUVEAU)
-            fileNameSpan.textContent = ''; // VIDE le nom du fichier (NOUVEAU)
+            selectedFile = null;
+            currentFileUrl = '';
+            currentFileMimeType = ''; // Reset MIME type
+            fileUploadInput.value = ''; // Reset file input to allow selecting same file again
+            filePreviewContainer.style.display = 'none'; // Hide file preview
+            previewContent.innerHTML = ''; // Clear preview content
+            fileNameSpan.textContent = ''; // Clear filename
         }
 
-        // 3. Gérer la réception d'un message du serveur (MODIFIÉE)
+        // 3. Handle receiving a message from the server
         socket.on('message', (msg) => {
             console.log('Client received message from server via socket:', msg);
 
             const messageElement = document.createElement('div');
             messageElement.classList.add('message-item');
 
+            // Add class for 'my-message' or 'other-message'
+            if (msg.senderId === currentUserId) {
+                messageElement.classList.add('my-message');
+            } else {
+                messageElement.classList.add('other-message');
+            }
+
             const senderDisplayName = msg.senderUsername || 'Utilisateur Inconnu';
             let messageContentHtml = '';
 
-            // MODIFIÉ: Gère 'image' ET 'file' (pour documents)
-            if (msg.type === 'image') {
+            if (msg.type === 'image' && msg.fileUrl) {
                 messageContentHtml = `<img src="${msg.fileUrl}" alt="Image de chat" class="chat-image" onclick="window.open(this.src)">`;
-            } else if (msg.type === 'file') {
-                // Pour les documents, affiche un lien de téléchargement
+            } else if (msg.type === 'file' && msg.fileUrl) {
+                // Determine icon based on file extension (for display)
+                let fileIconClass = 'fas fa-file';
+                const fileExtension = msg.fileUrl ? msg.fileUrl.split('.').pop().toLowerCase() : '';
+
+                if (fileExtension === 'pdf') {
+                    fileIconClass = 'fas fa-file-pdf';
+                } else if (fileExtension === 'doc' || fileExtension === 'docx') {
+                    fileIconClass = 'fas fa-file-word';
+                } else if (fileExtension === 'xls' || fileExtension === 'xlsx') {
+                    fileIconClass = 'fas fa-file-excel';
+                } else if (fileExtension === 'ppt' || fileExtension === 'pptx') {
+                    fileIconClass = 'fas fa-file-powerpoint';
+                } else if (fileExtension === 'zip' || fileExtension === 'rar') {
+                    fileIconClass = 'fas fa-file-archive';
+                }
+
+                // Render based on file type (PDF embed vs. generic link)
                 messageContentHtml = `
-                    <a href="${msg.fileUrl}" target="_blank" class="chat-document">
-                        <i class="fas fa-file"></i> Télécharger le document (${msg.content || 'Fichier'})
-                    </a>
+                    <div class="chat-document-container">
+                        ${fileExtension === 'pdf' ? `<p><strong>Aperçu PDF :</strong></p><iframe src="${msg.fileUrl}" class="chat-pdf-iframe"></iframe>` : ''}
+                        <a href="${msg.fileUrl}" target="_blank" class="chat-document-link" download="${msg.content || 'Fichier'}">
+                            <i class="${fileIconClass}"></i> Télécharger ${msg.content || 'Fichier'}
+                        </a>
+                    </div>
                 `;
             } else {
                 messageContentHtml = msg.content;
@@ -505,11 +581,11 @@
             `;
 
             messagesDiv.appendChild(messageElement);
-            // Fait défiler la boîte de messages vers le bas
+            // Scroll chat box to bottom
             messagesDiv.scrollTop = messagesDiv.scrollHeight;
         });
 
-        // 4. Défilement initial vers le bas pour voir les derniers messages
+        // 4. Initial scroll to bottom to see latest messages
         messagesDiv.scrollTop = messagesDiv.scrollHeight;
     </script>
 </body>
